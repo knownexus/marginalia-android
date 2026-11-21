@@ -3,6 +3,10 @@ package com.marginalia.app
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.webkit.*
+import android.widget.FrameLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
@@ -66,8 +70,16 @@ class MainActivity : ComponentActivity() {
                 request.url.toString().substringBefore('#')!="file:///android_asset/index.html"
         }
         web.addJavascriptInterface(MarginaliaBridge(this,repo),"MarginaliaAndroid")
-        web.setOnApplyWindowInsetsListener { v,i -> v.setPadding(i.systemWindowInsetLeft,i.systemWindowInsetTop,i.systemWindowInsetRight,i.systemWindowInsetBottom);i }
-        setContentView(web)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val content = FrameLayout(this)
+        content.addView(web)
+        ViewCompat.setOnApplyWindowInsetsListener(content) { container, insets ->
+            val visible = insets.getInsets(WindowInsetsCompat.Type.systemBars() or
+                WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
+            container.setPadding(visible.left, visible.top, visible.right, visible.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+        setContentView(content)
         web.loadUrl("file:///android_asset/index.html")
     }
     @Deprecated("Activity back")

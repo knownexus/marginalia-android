@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-aGZ08ItnuH5Ss5LXgNJ/csxwZOu9T+ellyv0fBbxhOU='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-l9mTPOvzC9fFDK9zZbX+jERBywFRI4SwREoT3AACHek='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -138,6 +138,7 @@ dl.kv dt{color:var(--muted);font-weight:700} dl.kv dd{margin:0}
 /* overlay */
 #overlay{position:fixed;inset:0;background:rgba(10,5,15,.72);overflow:auto;z-index:50;padding:1rem}
 #overlay[hidden]{display:none}
+html,#overlay{scroll-padding-block:12px}
 .modal{max-width:780px;margin:0 auto;background:var(--panel);border:3px double var(--accent);border-radius:var(--radius);padding:1rem 1.2rem 1.4rem}
 .modal-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:.8rem}
 .modal-head h2{margin:0}
@@ -912,6 +913,15 @@ function loadSamples(){
 
 /* ---------- go ---------- */
 window.MarginaliaNative={preview,status(msg){storageStatus=msg;render();toast(msg);}};
+// After the Android host resizes, reveal the focused field in its own scroll container.
+window.addEventListener('resize',()=>requestAnimationFrame(()=>{
+  const field=document.activeElement;
+  if(field && field.matches('textarea,input:not([type=checkbox]):not([type=radio])')){
+    const rect=field.getBoundingClientRect();
+    if(rect.top<0 || rect.bottom>window.innerHeight)
+      field.scrollIntoView({block:'nearest',inline:'nearest'});
+  }
+}));
 window.marginaliaBack=()=>{if(pending){dismissImport();return true;}if(ed){closeEditor();return true;}if(route().p!=='home'){location.hash='#/';return true;}return false;};
 document.addEventListener('toggle',ev=>{const k=ev.target.dataset?.group;if(k){if(ev.target.open)opened.add(k);else opened.delete(k);}},true);
 applyTheme();render();
