@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Cover, facing pages, and the ribbon marking the outer margin. -->
+    <path android:fillColor="#DFA8B9" android:pathData="M27,43 Q42,40 54,49 Q66,40 81,43 L81,70 Q66,68 54,76 Q42,68 27,70 Z" />
+    <path android:fillColor="#F8EDDA" android:pathData="M29,39 Q42,38 52.5,46 L52.5,70 Q42,63 29,64 Z" />
+    <path android:fillColor="#EAD6AD" android:pathData="M55.5,46 Q66,38 79,39 L79,64 Q66,63 55.5,70 Z" />
+    <path android:fillColor="#98556D" android:pathData="M69,40.3 Q71,39.8 74,39.4 L74,54 L71.5,52 L69,55 Z" />
+    <path android:fillColor="#F3C680" android:pathData="M54,27 Q55,34 62,35 Q55,36 54,43 Q53,36 46,35 Q53,34 54,27 Z" />
+</vector>
