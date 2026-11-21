@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "book-001",
+      "type": "book",
+      "title": "Your book title",
+      "creator": "Author name",
+      "franchiseId": "",
+      "genres": ["fantasy", "mystery"],
+      "status": "ongoing",
+      "stars": null,
+      "feeling": "",
+      "food": "",
+      "dates": [
+        { "start": "2026-11-21", "end": "", "note": "First read" }
+      ],
+      "details": { "pages": 320, "currentPage": 40, "format": "Paper" },
+      "notes": "",
+      "links": [],
+      "created": "2026-11-21T12:00:00.000Z",
+      "updated": "2026-11-21T12:00:00.000Z"
+    }
+  ],
+  "franchises": [],
+  "deleted": {}
+}

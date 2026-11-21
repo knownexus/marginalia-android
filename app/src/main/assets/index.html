@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-aGZ08ItnuH5Ss5LXgNJ/csxwZOu9T+ellyv0fBbxhOU='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1320">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Marginalia</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☾</text></svg>">
+<style>
+:root{
+  --font:Verdana,'Trebuchet MS',sans-serif;
+  --fs:18px; --lh:1.7; --ls:.025em;
+  --radius:12px;
+}
+:root[data-font="opendyslexic"]{--font:Verdana,'Trebuchet MS',sans-serif}
+:root[data-font="verdana"]{--font:Verdana,'Trebuchet MS',Tahoma,sans-serif}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1a1320; --bg2:#221929; --panel:#2a2033; --text:#f0e7dc; --muted:#c7b9cc;
+  --accent:#e2b872; --accent-ink:#1a1320; --rose:#eba7bb; --sage:#a9cba0; --sky:#a8bfe0;
+  --border:#5a4572; --danger:#f19a9a;
+  --pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Ctext x='10' y='24' font-size='14' fill='rgba(226,184,114,0.09)'%3E✦%3C/text%3E%3Ctext x='50' y='64' font-size='12' fill='rgba(235,167,187,0.09)'%3E☾%3C/text%3E%3C/svg%3E");
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f3ead8; --bg2:#ebdfc6; --panel:#fbf6ea; --text:#2b2232; --muted:#58495f;
+  --accent:#6f3f66; --accent-ink:#fff8ef; --rose:#a2415f; --sage:#3f5f3a; --sky:#35557f;
+  --border:#c4ad85; --danger:#a12b2b;
+  --pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Ctext x='10' y='24' font-size='14' fill='rgba(111,63,102,0.10)'%3E✦%3C/text%3E%3Ctext x='50' y='64' font-size='12' fill='rgba(63,95,58,0.12)'%3E❀%3C/text%3E%3C/svg%3E");
+}
+*{box-sizing:border-box}
+html{font-size:var(--fs)}
+body{margin:0;background:var(--bg) var(--pattern);color:var(--text);font-family:var(--font);line-height:var(--lh);letter-spacing:var(--ls);word-spacing:.1em;text-align:left}
+body.spacious{--lh:1.95;--ls:.05em}
+em,i,address,cite{font-style:normal}
+a{color:var(--accent);text-decoration-thickness:2px;text-underline-offset:3px}
+a:hover{color:var(--rose)}
+:focus-visible{outline:3px solid var(--rose);outline-offset:2px;border-radius:4px}
+button,input,select,textarea{font:inherit;letter-spacing:inherit;color:inherit}
+h1,h2,h3{line-height:1.3;margin:.2em 0 .5em;font-weight:700}
+h1{font-size:1.8rem} h2{font-size:1.35rem} h3{font-size:1.08rem;margin:0}
+h1::before,h2::before{content:"❦ ";color:var(--rose);font-weight:400}
+p{margin:.5em 0;max-width:70ch}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+.wrap{max-width:1040px;margin:0 auto;padding:0 1rem}
+main{padding-bottom:5rem;min-height:70vh}
+.skip{position:absolute;left:-999px}.skip:focus{left:8px;top:8px;background:var(--panel);padding:.5rem;z-index:99}
+
+/* header */
+header.top{background:var(--bg2);border-bottom:3px double var(--border);margin-bottom:1.2rem}
+.headerbar{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;padding-top:.7rem;padding-bottom:.4rem}
+.brand{font-size:1.5rem;font-weight:700;text-decoration:none;color:var(--accent);margin-right:auto}
+.brand span{color:var(--rose)}
+.tools{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.tools input[type=search]{width:12rem;max-width:100%}
+nav.main{display:flex;flex-wrap:wrap;gap:.3rem;padding-bottom:.7rem}
+nav.main a{padding:.25rem .8rem;border:2px solid transparent;border-radius:999px;text-decoration:none;color:var(--text)}
+nav.main a:hover{border-color:var(--border)}
+nav.main a[aria-current=page]{border-color:var(--accent);color:var(--accent);font-weight:700}
+
+/* controls */
+.btn{display:inline-flex;align-items:center;gap:.35rem;background:var(--panel);border:2px solid var(--border);border-radius:999px;padding:.3rem .9rem;cursor:pointer;text-decoration:none;color:var(--text);min-height:2.4rem}
+.btn:hover{border-color:var(--accent);color:var(--text)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.primary:hover{filter:brightness(1.08);color:var(--accent-ink)}
+.btn.ghost{background:transparent}
+.btn.danger{border-color:var(--danger);color:var(--danger)}
+.btn.small{padding:.1rem .6rem;min-height:2rem;font-size:.9rem}
+input[type=text],input[type=search],input[type=number],input[type=date],input[type=password],select,textarea{background:var(--bg);border:2px solid var(--border);border-radius:8px;padding:.45rem .6rem;width:100%;min-height:2.4rem}
+textarea{min-height:7rem;line-height:var(--lh);resize:vertical}
+label{display:block;font-weight:700;font-size:.92rem}
+label>input,label>select,label>textarea{margin-top:.2rem;font-weight:400}
+fieldset{border:2px solid var(--border);border-radius:var(--radius);margin:0 0 1rem;padding:.6rem .9rem .9rem}
+legend{font-weight:700;padding:0 .4rem}
+.row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.8rem;margin-bottom:.9rem}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem}
+.chip{display:inline-flex;align-items:center;gap:.3rem;border:2px solid var(--border);border-radius:999px;padding:.05rem .65rem;font-size:.88rem;background:transparent;color:var(--text)}
+button.chip{cursor:pointer;min-height:2.2rem}
+.chip.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.chip.genre{border-style:dashed;color:var(--muted)}
+
+/* panels & cards */
+.panel{background:var(--panel);border:3px double var(--border);border-radius:var(--radius);padding:1rem 1.1rem;margin-bottom:1.2rem}
+.panel>h2:first-child{margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.9rem}
+.card{display:block;background:var(--panel);border:2px solid var(--border);border-radius:var(--radius);padding:.8rem .95rem;text-decoration:none;color:var(--text)}
+.card:hover{border-color:var(--accent);color:var(--text);transform:translateY(-2px)}
+.card-top{display:flex;gap:.5rem;align-items:flex-start}
+.card .type{font-size:1.4rem;line-height:1.2}
+.meta{display:flex;flex-wrap:wrap;gap:.3rem .6rem;align-items:center;margin-top:.4rem;font-size:.9rem}
+.badge{border:2px solid var(--border);border-radius:6px;padding:0 .45rem;font-size:.82rem;font-weight:700}
+.badge.ongoing{border-color:var(--sage);color:var(--sage)}
+.badge.finished{border-color:var(--accent);color:var(--accent)}
+.badge.planned{border-color:var(--sky);color:var(--sky)}
+.badge.paused,.badge.dropped{border-color:var(--rose);color:var(--rose)}
+.stars{color:var(--accent);letter-spacing:.08em;white-space:nowrap}
+.stats-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.8rem;margin-bottom:1.2rem}
+.stat{background:var(--panel);border:3px double var(--border);border-radius:var(--radius);padding:.7rem;text-align:center;cursor:pointer;color:var(--text);text-decoration:none;display:block}
+.stat b{display:block;font-size:2rem;color:var(--accent);line-height:1.2}
+.empty{text-align:center;padding:2rem 1rem}
+.divider{text-align:center;color:var(--rose);margin:1.2rem 0;letter-spacing:.6em}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.7rem}
+dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:.2rem 1rem;margin:0}
+dl.kv dt{color:var(--muted);font-weight:700} dl.kv dd{margin:0}
+.notes{white-space:pre-wrap;max-width:70ch}
+.wikilink{color:var(--rose);font-weight:700}
+.wikilink.missing{text-decoration:dotted underline;color:var(--muted)}
+.runs{list-style:none;padding:0;margin:0}
+.runs li{padding:.2rem 0;border-bottom:1px dashed var(--border)}
+.rate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.7rem}
+.rate-box{border:2px solid var(--border);border-radius:10px;padding:.5rem .7rem}
+.rate-box small{display:block;color:var(--muted);font-weight:700}
+
+/* bars */
+.bars{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
+.bars li{display:grid;grid-template-columns:minmax(6rem,11rem) 1fr 3.2ch;gap:.6rem;align-items:center}
+.bar{display:block;background:var(--bg);border:2px solid var(--border);border-radius:999px;height:1.1rem;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bn{text-align:right;font-weight:700}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(20rem,1fr));gap:1.2rem}
+
+/* wrapped */
+.big{font-size:3rem;font-weight:700;color:var(--accent);line-height:1.1}
+.wrap-hero{text-align:center;padding:1.6rem 1rem;background:linear-gradient(135deg,var(--panel),var(--bg2));border:3px double var(--accent);border-radius:var(--radius);margin-bottom:1.2rem}
+.wrap-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;margin-bottom:1.2rem}
+.wrap-card{background:var(--panel);border:3px double var(--border);border-radius:var(--radius);padding:1rem;text-align:center}
+.wrap-card ol,.wrap-card ul{text-align:left;margin:.4rem 0 0;padding-left:1.3rem}
+
+/* timeline */
+.tl{list-style:none;margin:.5rem 0;padding:0 0 0 1.6rem;border-left:3px dotted var(--rose)}
+.tl li{position:relative;padding:.4rem 0;display:flex;flex-wrap:wrap;gap:.4rem .7rem;align-items:center}
+.tl li::before{content:"✦";position:absolute;left:-2.15rem;color:var(--accent);background:var(--panel)}
+.tl input.tl-note{width:14rem;max-width:100%;min-height:2rem;padding:.1rem .5rem}
+
+/* overlay */
+#overlay{position:fixed;inset:0;background:rgba(10,5,15,.72);overflow:auto;z-index:50;padding:1rem}
+#overlay[hidden]{display:none}
+.modal{max-width:780px;margin:0 auto;background:var(--panel);border:3px double var(--accent);border-radius:var(--radius);padding:1rem 1.2rem 1.4rem}
+.modal-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:.8rem}
+.modal-head h2{margin:0}
+.run-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.5rem;align-items:end;padding:.5rem 0;border-bottom:1px dashed var(--border)}
+.sticky-actions{display:flex;gap:.6rem;justify-content:flex-end;flex-wrap:wrap;margin-top:1rem}
+#toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);background:var(--accent);color:var(--accent-ink);padding:.5rem 1.1rem;border-radius:999px;font-weight:700;z-index:99;max-width:90vw}
+#toast[hidden]{display:none}
+@media (prefers-reduced-motion:no-preference){.card{transition:transform .12s,border-color .12s}}
+@media (max-width:560px){:root{--fs:17px}.bars li{grid-template-columns:5.5rem 1fr 3ch}.tools input[type=search]{width:100%}}
+.facet{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:.6rem;align-items:center;border-bottom:1px solid var(--border);padding:.4rem 0}.facet label{font-weight:400}.panel summary{cursor:pointer;padding:.45rem 0;font-weight:bold}.grid,.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr))}#app{overflow-wrap:anywhere}:root[data-font="serif"]{--font:Georgia,serif}</style>
+</head>
+<body>
+<a class="skip" href="#app">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <div class="headerbar">
+      <a class="brand" href="#/">☾ Marginalia <span>✦</span></a>
+      <button class="btn primary" data-act="new">＋ Log something</button>
+      <div class="tools">
+        <input id="q" type="search" placeholder="Search everything…" aria-label="Search everything">
+        <button class="btn small" id="syncbtn" data-act="sync" title="Library files"></button>
+        <button class="btn small" id="themebtn" data-act="theme"></button>
+      </div>
+    </div>
+    <nav class="main" aria-label="Main">
+      <a href="#/" data-nav="home">Home</a>
+      <a href="#/library" data-nav="library">Library</a>
+      <a href="#/franchises" data-nav="franchises">Franchises</a>
+      <a href="#/stats" data-nav="stats">Stats</a>
+      <a href="#/wrapped" data-nav="wrapped">Year wrapped</a>
+      <a href="#/settings" data-nav="settings">Settings &amp; files</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="app"></main>
+<div id="overlay" hidden></div>
+<div id="toast" role="status" hidden></div>
+<input type="file" id="importfile" accept="application/json,.json" hidden>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- helpers ---------- */
+const $=(s,el=document)=>el.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const now=()=>new Date().toISOString();
+const today=()=>{const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');};
+const fmtDate=d=>{if(!d)return '';const [y,m,dd]=d.split('-').map(Number);return new Date(y,m-1,dd).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});};
+const num=x=>Number(x).toLocaleString('en-GB',{maximumFractionDigits:1});
+const opt=(v,l,cur)=>`<option value="${esc(v)}"${String(cur)===String(v)?' selected':''}>${esc(l)}</option>`;
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/* ---------- configuration (edit these to taste!) ---------- */
+const TYPES={
+  book:{label:'Book',icon:'📖',creator:'Author',fields:[
+    {k:'pages',label:'Pages',kind:'number'},
+    {k:'currentPage',label:'Current page',kind:'number'},
+    {k:'format',label:'Format',kind:'select',options:['Paper','E-book','Audiobook','Comic / manga']},
+    {k:'series',label:'Series / volume',kind:'text'}]},
+  tv:{label:'TV show',icon:'📺',creator:'Creator',fields:[
+    {k:'seasons',label:'Seasons watched',kind:'text'},
+    {k:'episodes',label:'Episode progress',kind:'text'},
+    {k:'where',label:'Where watched',kind:'text'}]},
+  film:{label:'Film',icon:'🎞️',creator:'Director',fields:[
+    {k:'year',label:'Release year',kind:'number'},
+    {k:'runtime',label:'Runtime (minutes)',kind:'number'},
+    {k:'where',label:'Where',kind:'select',options:['Cinema','Home','Festival','Other']}]},
+  play:{label:'Play / theatre',icon:'🎭',creator:'Playwright / company',fields:[
+    {k:'venue',label:'Venue',kind:'text'},
+    {k:'cast',label:'Notable cast',kind:'text'},
+    {k:'format',label:'Format',kind:'select',options:['Live','Recorded / streamed','Read the script']}]},
+  game:{label:'Game',icon:'🎮',creator:'Developer',fields:[
+    {k:'platform',label:'Platform',kind:'text'},
+    {k:'hours',label:'Hours played',kind:'number'},
+    {k:'completion',label:'Completion %',kind:'number'}]},
+  online:{label:'Online game',icon:'🌐',creator:'Developer',fields:[
+    {k:'platform',label:'Platform',kind:'text'},
+    {k:'hours',label:'Hours played',kind:'number'},
+    {k:'rank',label:'Rank / level',kind:'text'},
+    {k:'group',label:'Guild / group',kind:'text'}]},
+  escape:{label:'Escape room',icon:'🗝️',creator:'Company / venue',fields:[
+    {k:'location',label:'Location',kind:'text'},
+    {k:'escaped',label:'Escaped?',kind:'select',options:['Yes','No']},
+    {k:'timeLeft',label:'Time left (mm:ss)',kind:'text'},
+    {k:'players',label:'Players',kind:'number'},
+    {k:'hints',label:'Hints used',kind:'number'}]}
+};
+const TYPE_KEYS=Object.keys(TYPES);
+const STATUSES=[['planned','Planned'],['ongoing','In progress'],['finished','Finished'],['paused','On hold'],['dropped','Dropped']];
+const statusLabel=k=>(STATUSES.find(s=>s[0]===k)||[k,k])[1];
+const FEELINGS=[
+  {k:'love',label:'Love',emoji:'💗'},{k:'like',label:'Like',emoji:'🙂'},{k:'meh',label:'Meh',emoji:'😐'},
+  {k:'dislike',label:'Dislike',emoji:'🙁'},{k:'hate',label:'Hate',emoji:'💢'}];
+const FOODS=[
+  {k:'steak',label:'Steak',emoji:'🥩',hint:'fun and good'},
+  {k:'burger',label:'Hamburger',emoji:'🍔',hint:'fun, not so good'},
+  {k:'codliver',label:'Cod liver oil',emoji:'🐟',hint:'not fun, but good'},
+  {k:'cracker',label:'Stale cracker',emoji:'🍘',hint:'not fun, not good'}];
+const REL={
+  adaptation_of:{out:'is an adaptation of',in:'was adapted as'},
+  sequel_of:{out:'is a sequel to',in:'is followed by'},
+  prequel_of:{out:'is a prequel to',in:'is preceded by'},
+  spinoff_of:{out:'is a spin-off of',in:'has the spin-off'},
+  remake_of:{out:'is a remake of',in:'was remade as'},
+  inspired_by:{out:'was inspired by',in:'inspired'},
+  related:{out:'is related to',in:'is related to'}};
+const feelOf=k=>FEELINGS.find(f=>f.k===k);
+const foodOf=k=>FOODS.find(f=>f.k===k);
+
+/* ---------- state ---------- */
+const LS_DATA='marginalia.data.v1',LS_SET='marginalia.settings.v1';
+const native=window.MarginaliaAndroid;
+let db,storageStatus='Saved on device';
+try { db=normalize(native?JSON.parse(native.load()):loadJSON(LS_DATA)||{}); }
+catch(err){document.body.textContent='The library could not be read. Reopen Marginalia to retry.';throw err;}
+let settings=Object.assign({theme:'auto',font:'system',size:18,spacious:false},loadJSON(LS_SET)||{});
+const defaults=()=>({q:'',sort:'recent',mode:'all',min:'',max:'',from:'',to:'',include:{},exclude:{}});
+let F=defaults(), ed=null,edInitial='',pending=null;
+const opened=new Set();
+function loadJSON(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
+function normalize(d){
+  d=d||{};
+  d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'planned',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],created:now(),updated:now()},e,{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[]}));
+  d.franchises=(d.franchises||[]).map(f=>Object.assign({name:'',notes:'',created:now(),updated:now()},f,{timelines:f.timelines||[]}));
+  d.deleted=d.deleted||{};
+  d.version=1;
+  return d;
+}
+function saveLocal(){
+  try{const json=JSON.stringify(db);if(native){storageStatus=native.save(json);if(!storageStatus.startsWith('Saved'))throw Error(storageStatus);}
+  else localStorage.setItem(LS_DATA,json);return true;}
+  catch(e){storageStatus='Save failed: '+e.message;toast(storageStatus);updateChrome();return false;}
+}
+function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}}
+function changed(){saveLocal();render();}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
+
+/* ---------- data helpers ---------- */
+const byId=id=>db.entries.find(e=>e.id===id);
+const frById=id=>db.franchises.find(f=>f.id===id);
+const frName=e=>{const f=e.franchiseId&&frById(e.franchiseId);return f?f.name:'';};
+const byName=(a,b)=>a.name.localeCompare(b.name);
+const byTitle=(a,b)=>a.title.localeCompare(b.title);
+const runYear=r=>{const s=r.end||r.start;return s?Number(s.slice(0,4)):null;};
+const runDate=r=>r.end||r.start||'';
+const latestRun=e=>{let b='';for(const r of e.dates)if(runDate(r)>b)b=runDate(r);return b;};
+const activity=e=>latestRun(e)||e.created.slice(0,10);
+const entryYears=e=>{const s=new Set();for(const r of e.dates){if(r.start)s.add(Number(r.start.slice(0,4)));if(r.end)s.add(Number(r.end.slice(0,4)));}return [...s];};
+const allYears=()=>{const s=new Set();db.entries.forEach(e=>entryYears(e).forEach(y=>s.add(y)));return [...s].sort((a,b)=>b-a);};
+function ensureFranchise(name){
+  const k=name.trim().toLowerCase();
+  let f=db.franchises.find(x=>x.name.trim().toLowerCase()===k);
+  if(!f){f={id:uid(),name:name.trim(),notes:'',timelines:[],created:now(),updated:now()};db.franchises.push(f);}
+  return f.id;
+}
+const STAR_STEPS=[0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5];
+function starsHTML(n){if(n==null)return '';const full=Math.floor(n),half=n%1>=0.5?1:0;return `<span class="stars" role="img" aria-label="${n} out of 5 stars" title="${n}/5">${'★'.repeat(full)}${half?'½':''}${'☆'.repeat(5-full-half)}</span>`;}
+function statusBadge(s){return `<span class="badge ${esc(s)}">${esc(statusLabel(s))}</span>`;}
+function ratingsInline(e){
+  let h='';
+  if(e.stars!=null)h+=starsHTML(e.stars);
+  const f=feelOf(e.feeling);if(f)h+=` <span title="Feeling: ${f.label}">${f.emoji} ${f.label}</span>`;
+  const fd=foodOf(e.food);if(fd)h+=` <span title="Food scale: ${fd.label} (${fd.hint})">${fd.emoji} ${fd.label}</span>`;
+  return h;
+}
+function progressText(e){
+  const d=e.details||{};
+  if(e.type==='book'&&d.pages&&d.currentPage&&e.status!=='finished')return `p. ${d.currentPage} of ${d.pages} (${Math.round(d.currentPage/d.pages*100)}%)`;
+  if((e.type==='game'||e.type==='online')&&d.hours)return `${num(d.hours)} h played`;
+  if(e.type==='tv'&&d.episodes)return d.episodes;
+  if(e.type==='escape'&&d.escaped)return d.escaped==='Yes'?'Escaped! 🎉':'Did not escape';
+  return '';
+}
+function renderNotes(t){
+  t=t||'';let out='',last=0,m;const re=/\[\[([^\]]+)\]\]/g;
+  while((m=re.exec(t))){
+    out+=esc(t.slice(last,m.index));
+    const q=m[1].trim().toLowerCase();const hit=db.entries.find(e=>e.title.toLowerCase()===q);
+    out+=hit?`<a class="wikilink" href="#/entry/${hit.id}">${esc(hit.title)}</a>`:`<span class="wikilink missing" title="No entry with this title yet">${esc(m[1])}</span>`;
+    last=re.lastIndex;
+  }
+  return out+esc(t.slice(last));
+}
+function cardHTML(e){
+  const T=TYPES[e.type]||TYPES.book,fr=frName(e),p=progressText(e),d=latestRun(e);
+  return `<a class="card" href="#/entry/${e.id}">
+    <div class="card-top"><span class="type" title="${esc(T.label)}">${T.icon}</span><h3>${esc(e.title)}</h3></div>
+    ${e.creator?`<div class="muted">${esc(e.creator)}</div>`:''}
+    <div class="meta">${statusBadge(e.status)} ${ratingsInline(e)}</div>
+    ${(fr||p||d)?`<div class="meta muted">${fr?`❦ ${esc(fr)}`:''} ${p?`· ${esc(p)}`:''} ${d?`· ${fmtDate(d)}`:''}</div>`:''}
+    ${e.genres.length?`<div class="chips" style="margin-top:.4rem">${e.genres.map(g=>`<span class="chip genre">${esc(g)}</span>`).join('')}</div>`:''}
+  </a>`;
+}
+function bars(rows){
+  const max=Math.max(1,...rows.map(r=>r[1]));
+  return `<ul class="bars">${rows.map(([l,c])=>`<li><span>${l}</span><span class="bar"><i style="width:${Math.round(c/max*100)}%"></i></span><span class="bn">${c}</span></li>`).join('')}</ul>`;
+}
+const countBy=(list,fn)=>{const m=new Map();list.forEach(x=>{const k=fn(x);if(k==null||k==='')return;m.set(k,(m.get(k)||0)+1);});return m;};
+const topN=(m,n)=>[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,n);
+
+/* ---------- routing ---------- */
+function route(){const h=location.hash.replace(/^#\/?/,'');const [p,a]=h.split('/');return {p:p||'home',a:a?decodeURIComponent(a):''};}
+let lastKey='';
+function render(){
+  const r=route();
+  document.querySelectorAll('nav.main a').forEach(a=>{if(a.dataset.nav===r.p||(r.p==='entry'&&a.dataset.nav==='library')||(r.p==='franchise'&&a.dataset.nav==='franchises'))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  let html='';
+  switch(r.p){
+    case 'home':html=viewHome();break;
+    case 'library':html=viewLibrary();break;
+    case 'entry':html=viewEntry(r.a);break;
+    case 'franchises':html=viewFranchises();break;
+    case 'franchise':html=viewFranchise(r.a);break;
+    case 'stats':html=viewStats();break;
+    case 'wrapped':html=viewWrapped(r.a);break;
+    case 'settings':html=viewSettings();break;
+    default:html='<div class="panel empty"><h2>Lost in the stacks</h2><p><a href="#/">Back home</a></p></div>';
+  }
+  $('#app').innerHTML=html;
+  const key=r.p+'/'+r.a;if(key!==lastKey){window.scrollTo(0,0);lastKey=key;}
+  updateChrome();
+}
+
+/* ---------- views ---------- */
+function emptyState(){
+  return `<div class="panel empty"><h2>The shelves are empty</h2>
+  <p>Nothing logged yet. Start with the button at the top, or fill the shelves with a few sample entries to see how everything looks (you can delete them afterwards).</p>
+  <p><button class="btn primary" data-act="new">＋ Log your first thing</button> <button class="btn" data-act="samples">Add sample entries</button></p></div>`;
+}
+function viewHome(){
+  const E=db.entries;if(!E.length)return emptyState();
+  const yr=new Date().getFullYear();
+  const finThisYear=E.filter(e=>e.status==='finished'&&e.dates.some(r=>runYear(r)===yr)).length;
+  const ongoing=E.filter(e=>e.status==='ongoing').sort((a,b)=>activity(b).localeCompare(activity(a)));
+  const recent=[...E].sort((a,b)=>activity(b).localeCompare(activity(a))||b.created.localeCompare(a.created)).slice(0,8);
+  const planned=E.filter(e=>e.status==='planned').sort((a,b)=>b.created.localeCompare(a.created)).slice(0,6);
+  const qs=(k,v,label,n)=>`<a class="stat" href="#/library" data-act="quick" data-k="${k}" data-v="${v}"><b>${n}</b>${label}</a>`;
+  return `<h1>Welcome back</h1>
+  <div class="stats-strip">
+    ${qs('','', 'in the library',E.length)}
+    ${qs('status','ongoing','in progress',ongoing.length)}
+    ${qs('status','planned','planned',E.filter(e=>e.status==='planned').length)}
+    <a class="stat" href="#/wrapped"><b>${finThisYear}</b>finished in ${yr}</a>
+  </div>
+  <h2>Right now</h2>
+  ${ongoing.length?`<div class="grid">${ongoing.map(cardHTML).join('')}</div>`:'<p class="muted">Nothing marked as in progress.</p>'}
+  <div class="divider">✦ ✦ ✦</div>
+  <h2>Recently logged</h2><div class="grid">${recent.map(cardHTML).join('')}</div>
+  ${planned.length?`<div class="divider">☾</div><h2>On the to-do shelf</h2><div class="grid">${planned.map(cardHTML).join('')}</div>`:''}`;
+}
+function matches(e,f){
+  const years=entryYears(e);
+  const vals={genre:e.genres,year:years.map(String),type:[e.type],status:[e.status],franchise:[e.franchiseId],stars:e.stars==null?[]:[String(e.stars)],feeling:[e.feeling],food:[e.food]};
+  for(const [k,values] of Object.entries(vals)){
+    if((f.exclude[k]||[]).some(x=>values.includes(x)))return false;
+    const inc=f.include[k]||[];
+    if(inc.length && !inc[(k==='genre'||k==='year')&&f.mode==='all'?'every':'some'](x=>values.includes(x)))return false;
+  }
+  if((f.min!==''||f.max!=='')&&(e.stars==null||f.min!==''&&e.stars<+f.min||f.max!==''&&e.stars>+f.max))return false;
+  return !(f.from||f.to)||years.some(y=>(!f.from||y>=+f.from)&&(!f.to||y<=+f.to));
+}
+function filtered(){
+  const q=F.q.trim().toLowerCase();
+  const list=db.entries.filter(e=>{
+    if(!matches(e,F))return false;
+    if(q){
+      const hay=[e.title,e.creator,frName(e),e.genres.join(' '),e.notes,TYPES[e.type].label,Object.values(e.details||{}).join(' '),e.dates.map(r=>r.note).join(' ')].join(' ').toLowerCase();
+      if(!q.split(/\s+/).every(w=>hay.includes(w)))return false;
+    }
+    return true;
+  });
+  const s=F.sort;
+  list.sort((a,b)=>{
+    if(s==='title')return a.title.localeCompare(b.title);
+    if(s==='rating')return (b.stars==null?-1:b.stars)-(a.stars==null?-1:a.stars)||a.title.localeCompare(b.title);
+    if(s==='added')return b.created.localeCompare(a.created);
+    return activity(b).localeCompare(activity(a))||b.created.localeCompare(a.created);
+  });
+  return list;
+}
+function viewLibrary(){
+  if(!db.entries.length)return emptyState();
+  const list=filtered();
+  const frs=[...db.franchises].sort(byName);
+  const genres=[...new Set(db.entries.flatMap(e=>e.genres))].sort();
+  const years=allYears();
+  const facets={type:['Type',TYPE_KEYS.map(k=>[k,TYPES[k].label])],status:['Status',STATUSES],franchise:['Franchise',frs.map(x=>[x.id,x.name])],genre:['Genre',genres.map(x=>[x,x])],feeling:['Feeling',FEELINGS.map(x=>[x.k,x.label])],food:['Food scale',FOODS.map(x=>[x.k,x.label])],stars:['Stars',STAR_STEPS.map(x=>[String(x),x+' ★'])],year:['Year',years.map(x=>[String(x),x])]};
+  const chips=[];
+  const groups=Object.entries(facets).map(([k,[label,opts]])=>{
+    const rows=opts.map(([v,name])=>{
+      const controls=['include','exclude'].map(side=>{
+        const checked=(F[side][k]||[]).includes(v);
+        const attrs='data-side="'+side+'" data-k="'+k+'" data-v="'+esc(v)+'"';
+        if(checked)chips.push('<button class="chip" data-act="untag" '+attrs+'>'+side+' '+esc(name)+' ×</button>');
+        return '<label><input type="checkbox" data-change="facet" '+attrs+(checked?' checked':'')+'>'+side+'</label>';
+      }).join(' ');
+      return '<div class="facet"><span>'+esc(name)+'</span>'+controls+'</div>';
+    }).join('');
+    return '<details data-group="'+k+'" '+(opened.has(k)?'open':'')+'><summary>'+label+'</summary>'+ (rows||'No values yet')+'</details>';
+  }).join('');
+  const range=(k,l,type)=>'<label>'+l+'<input type="number" '+(type==='stars'?'min="0" max="5" step=".5"':'min="1" max="9999"')+' data-change="filter" data-k="'+k+'" value="'+esc(F[k])+'"></label>';
+  for(const [key,label] of Object.entries({q:'Search',min:'Minimum stars',max:'Maximum stars',from:'From year',to:'To year'}))if(F[key]!=='')chips.push('<button class="chip" data-act="unrange" data-k="'+key+'">'+label+' '+esc(F[key])+' ×</button>');
+  return `<h1>Library</h1><div class="panel"><details data-group="panel" ${opened.has('panel')?'open':''}><summary>Sort and filter</summary>
+  <label>Included genres and years<select data-change="filter" data-k="mode">${opt('all','Match all',F.mode)}${opt('any','Match any',F.mode)}</select></label>
+  ${groups}<div class="filters">${range('min','Minimum stars','stars')}${range('max','Maximum stars','stars')}${range('from','From year')}${range('to','To year')}
+    <label>Sort by<select data-change="filter" data-k="sort">${opt('recent','Most recent activity',F.sort)}${opt('added','Date added',F.sort)}${opt('title','Title A–Z',F.sort)}${opt('rating','Stars (high first)',F.sort)}</select></label>
+  </div>
+  </details><p>${list.length} of ${db.entries.length} shown</p><div class="chips">${chips.join('')}<button class="btn small" data-act="clear-filters">Clear all</button></div></div>
+  ${list.length?`<div class="grid">${list.map(cardHTML).join('')}</div>`:'<div class="panel empty">Nothing matches those filters.</div>'}`;
+}
+function viewEntry(id){
+  const e=byId(id);
+  if(!e)return '<div class="panel empty"><h2>Entry not found</h2><p>It may have been deleted on another device. <a href="#/library">Back to the library</a></p></div>';
+  const T=TYPES[e.type],fr=e.franchiseId&&frById(e.franchiseId);
+  const fieldRows=T.fields.filter(f=>e.details[f.k]!==undefined&&e.details[f.k]!=='').map(f=>`<dt>${esc(f.label)}</dt><dd>${esc(e.details[f.k])}</dd>`).join('');
+  const out=e.links.filter(l=>byId(l.to)).map(l=>{const t=byId(l.to);return `<li>${esc(REL[l.rel]?REL[l.rel].out:'is related to')} <a href="#/entry/${t.id}">${TYPES[t.type].icon} ${esc(t.title)}</a></li>`;});
+  const inc=[];db.entries.forEach(x=>x.links.forEach(l=>{if(l.to===e.id)inc.push(`<li><a href="#/entry/${x.id}">${TYPES[x.type].icon} ${esc(x.title)}</a> ${esc(REL[l.rel]?REL[l.rel].out:'is related to')} this</li>`);}));
+  const mention=db.entries.filter(x=>x.id!==e.id&&x.notes&&x.notes.toLowerCase().includes('[['+e.title.toLowerCase()+']]'));
+  const tls=[];db.franchises.forEach(f=>f.timelines.forEach(t=>{if(t.items.some(i=>i.entryId===e.id))tls.push(`<li><a href="#/franchise/${f.id}">${esc(f.name)}: ${esc(t.name)}</a></li>`);}));
+  const runs=[...e.dates].sort((a,b)=>runDate(a).localeCompare(runDate(b)));
+  return `<p><a href="#/library">← Library</a></p>
+  <div class="panel">
+    <div class="card-top"><span class="type" style="font-size:2rem">${T.icon}</span><div><h1 style="margin:0">${esc(e.title)}</h1>
+    <div class="muted">${esc(T.label)}${e.creator?` · ${esc(T.creator)}: ${esc(e.creator)}`:''}</div></div></div>
+    <div class="meta" style="margin:.7rem 0">${statusBadge(e.status)} ${fr?`<a href="#/franchise/${fr.id}">❦ ${esc(fr.name)}</a>`:''} ${progressText(e)?`<span class="muted">· ${esc(progressText(e))}</span>`:''}</div>
+    ${e.genres.length?`<div class="chips">${e.genres.map(g=>`<span class="chip genre">${esc(g)}</span>`).join('')}</div>`:''}
+    <div class="rate-grid" style="margin-top:.9rem">
+      <div class="rate-box"><small>Stars</small>${e.stars!=null?starsHTML(e.stars)+` ${e.stars}/5`:'<span class="muted">not rated</span>'}</div>
+      <div class="rate-box"><small>Feeling</small>${feelOf(e.feeling)?feelOf(e.feeling).emoji+' '+feelOf(e.feeling).label:'<span class="muted">—</span>'}</div>
+      <div class="rate-box"><small>Food scale</small>${foodOf(e.food)?foodOf(e.food).emoji+' '+foodOf(e.food).label+`<br><span class="muted small">${foodOf(e.food).hint}</span>`:'<span class="muted">—</span>'}</div>
+    </div>
+    <p style="margin-top:1rem"><button class="btn" data-act="edit" data-id="${e.id}">✎ Edit</button> <button class="btn danger" data-act="delete" data-id="${e.id}">Delete</button></p>
+  </div>
+  ${runs.length?`<div class="panel"><h2>Dates</h2><ul class="runs">${runs.map((r,i)=>`<li><b>${runs.length>1?`Run ${i+1}: `:''}</b>${r.start?fmtDate(r.start):'?'}${r.end?` → ${fmtDate(r.end)}`:(r.start?' → …':'')}${r.note?` <span class="muted">— ${esc(r.note)}</span>`:''}</li>`).join('')}</ul></div>`:''}
+  ${fieldRows?`<div class="panel"><h2>Details</h2><dl class="kv">${fieldRows}</dl></div>`:''}
+  ${e.notes?`<div class="panel"><h2>Notes</h2><div class="notes">${renderNotes(e.notes)}</div></div>`:''}
+  ${(out.length||inc.length||mention.length||tls.length)?`<div class="panel"><h2>Connections</h2>
+    ${out.length||inc.length?`<ul>${out.join('')}${inc.join('')}</ul>`:''}
+    ${mention.length?`<p class="muted" style="margin-bottom:0">Mentioned in the notes of: ${mention.map(x=>`<a href="#/entry/${x.id}">${esc(x.title)}</a>`).join(', ')}</p>`:''}
+    ${tls.length?`<p class="muted" style="margin-bottom:0">Appears in timelines:</p><ul>${tls.join('')}</ul>`:''}</div>`:''}`;
+}
+function viewFranchises(){
+  const frs=[...db.franchises].sort(byName);
+  return `<h1>Franchises</h1><p><button class="btn primary" data-act="new-franchise">＋ New franchise</button></p>
+  ${frs.length?`<div class="grid">${frs.map(f=>{const n=db.entries.filter(e=>e.franchiseId===f.id);return `<a class="card" href="#/franchise/${f.id}"><h3>❦ ${esc(f.name)}</h3><div class="meta muted">${n.length} entr${n.length===1?'y':'ies'} · ${f.timelines.length} timeline${f.timelines.length===1?'':'s'}</div><div class="meta">${[...new Set(n.map(e=>TYPES[e.type].icon))].join(' ')}</div></a>`;}).join('')}</div>`
+  :'<div class="panel empty">No franchises yet. Type a franchise name when logging something, or create one here.</div>'}`;
+}
+function viewFranchise(id){
+  const f=frById(id);
+  if(!f)return '<div class="panel empty"><h2>Franchise not found</h2><p><a href="#/franchises">Back</a></p></div>';
+  const mine=db.entries.filter(e=>e.franchiseId===f.id).sort((a,b)=>activity(a).localeCompare(activity(b)));
+  const others=db.entries.filter(e=>e.franchiseId!==f.id).sort(byTitle);
+  const addOpts=`<option value="">— add an entry —</option>${mine.length?`<optgroup label="In this franchise">${mine.map(e=>opt(e.id,TYPES[e.type].icon+' '+e.title,'')).join('')}</optgroup>`:''}<optgroup label="Everything else">${others.map(e=>opt(e.id,TYPES[e.type].icon+' '+e.title,'')).join('')}</optgroup>`;
+  const tl=f.timelines.map(t=>{
+    const items=t.items.filter(i=>byId(i.entryId));
+    return `<div class="panel"><h3 style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">${esc(t.name)}
+      <button class="btn small" data-act="tl-rename" data-f="${f.id}" data-t="${t.id}">Rename</button>
+      <button class="btn small danger" data-act="tl-del" data-f="${f.id}" data-t="${t.id}">Delete</button></h3>
+      ${items.length?`<ol class="tl">${t.items.map((it,i)=>{const e=byId(it.entryId);if(!e)return '';return `<li><a href="#/entry/${e.id}">${TYPES[e.type].icon} ${esc(e.title)}</a>
+        <input class="tl-note" type="text" value="${esc(it.note||'')}" placeholder="note / in-universe date" aria-label="Note for ${esc(e.title)}" data-change="tl-note" data-f="${f.id}" data-t="${t.id}" data-i="${i}">
+        <button class="btn small" aria-label="Move up" data-act="tl-up" data-f="${f.id}" data-t="${t.id}" data-i="${i}">↑</button>
+        <button class="btn small" aria-label="Move down" data-act="tl-down" data-f="${f.id}" data-t="${t.id}" data-i="${i}">↓</button>
+        <button class="btn small" aria-label="Remove from timeline" data-act="tl-remove" data-f="${f.id}" data-t="${t.id}" data-i="${i}">✕</button></li>`;}).join('')}</ol>`:'<p class="muted">Empty so far.</p>'}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap"><select id="tl-add-${t.id}" style="max-width:26rem" aria-label="Entry to add">${addOpts}</select><button class="btn" data-act="tl-add" data-f="${f.id}" data-t="${t.id}">Add to timeline</button></div></div>`;
+  }).join('');
+  return `<p><a href="#/franchises">← Franchises</a></p>
+  <h1 style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center">${esc(f.name)} <button class="btn small" data-act="fr-rename" data-f="${f.id}">Rename</button> <button class="btn small danger" data-act="fr-del" data-f="${f.id}">Delete franchise</button></h1>
+  <div class="panel"><h2>Notes</h2>
+    <textarea data-change="fr-notes" data-f="${f.id}" placeholder="Lore, reading order thoughts, favourite characters… Use [[Entry title]] to link to an entry.">${esc(f.notes)}</textarea>
+    ${f.notes?`<details style="margin-top:.6rem"><summary>Preview with links</summary><div class="notes">${renderNotes(f.notes)}</div></details>`:''}</div>
+  <h2>Entries (${mine.length})</h2>
+  ${mine.length?`<div class="grid">${mine.map(cardHTML).join('')}</div>`:'<p class="muted">Nothing here yet. Set the franchise when logging an entry.</p>'}
+  <div class="divider">✦ ✦ ✦</div>
+  <h2>Timelines</h2>
+  <p class="muted">Release order, chronological order, machete order, in-universe dates… make as many as you like and arrange the entries.</p>
+  ${tl}
+  <div class="panel"><label>New timeline<input type="text" id="tl-new" list="tl-suggest" placeholder="e.g. Chronological order"></label>
+  <datalist id="tl-suggest"><option value="Release order"><option value="Chronological order"><option value="Machete order"><option value="In-universe order"></datalist>
+  <p style="margin-bottom:0"><button class="btn" data-act="tl-create" data-f="${f.id}">＋ Create timeline</button></p></div>`;
+}
+function viewStats(){
+  const E=db.entries;if(!E.length)return emptyState();
+  const fin=E.filter(e=>e.status==='finished');
+  const rated=E.filter(e=>e.stars!=null);
+  const avg=rated.length?(rated.reduce((s,e)=>s+e.stars,0)/rated.length).toFixed(2):'–';
+  const hours=E.filter(e=>(e.type==='game'||e.type==='online')&&e.details.hours).reduce((s,e)=>s+Number(e.details.hours),0);
+  const pages=fin.filter(e=>e.type==='book'&&e.details.pages).reduce((s,e)=>s+Number(e.details.pages),0);
+  const logs=E.reduce((s,e)=>s+e.dates.length,0);
+  const esc_=E.filter(e=>e.type==='escape'&&e.details.escaped);
+  const escYes=esc_.filter(e=>e.details.escaped==='Yes').length;
+  const types=TYPE_KEYS.map(k=>[TYPES[k].icon+' '+TYPES[k].label,E.filter(e=>e.type===k).length]).filter(r=>r[1]);
+  const statuses=STATUSES.map(s=>[s[1],E.filter(e=>e.status===s[0]).length]).filter(r=>r[1]);
+  const stars=STAR_STEPS.map(n=>[n+' ★',E.filter(e=>e.stars===n).length]);
+  const feels=FEELINGS.map(f=>[f.emoji+' '+f.label,E.filter(e=>e.feeling===f.k).length]);
+  const foods=FOODS.map(f=>[f.emoji+' '+f.label,E.filter(e=>e.food===f.k).length]);
+  const genres=topN(countBy(E.flatMap(e=>e.genres),g=>g),10).map(([g,c])=>[esc(g),c]);
+  const frs=topN(countBy(E,e=>frName(e)),8).map(([g,c])=>[esc(g),c]);
+  const years=allYears().map(y=>[String(y),E.filter(e=>entryYears(e).includes(y)).length]);
+  const avgType=TYPE_KEYS.map(k=>{const r=rated.filter(e=>e.type===k);return r.length?`<li>${TYPES[k].icon} ${TYPES[k].label}: <b>${(r.reduce((s,e)=>s+e.stars,0)/r.length).toFixed(2)}</b> ★ (${r.length})</li>`:'';}).join('');
+  const box=(h,body)=>`<div class="panel"><h2>${h}</h2>${body}</div>`;
+  return `<h1>Stats</h1>
+  <div class="stats-strip">
+    <div class="stat" style="cursor:default"><b>${E.length}</b>entries</div>
+    <div class="stat" style="cursor:default"><b>${fin.length}</b>finished</div>
+    <div class="stat" style="cursor:default"><b>${logs}</b>dated runs</div>
+    <div class="stat" style="cursor:default"><b>${avg}</b>average ★</div>
+    ${hours?`<div class="stat" style="cursor:default"><b>${num(hours)}</b>game hours</div>`:''}
+    ${pages?`<div class="stat" style="cursor:default"><b>${num(pages)}</b>pages read</div>`:''}
+    ${esc_.length?`<div class="stat" style="cursor:default"><b>${Math.round(escYes/esc_.length*100)}%</b>escape rate</div>`:''}
+  </div>
+  <div class="two">
+    ${box('By type',bars(types))}${box('By status',bars(statuses))}
+    ${box('Stars',bars(stars))}${box('Feelings',bars(feels))}
+    ${box('Food scale',bars(foods))}${box('Average stars by type',avgType?`<ul>${avgType}</ul>`:'<p class="muted">No ratings yet.</p>')}
+    ${genres.length?box('Top genres',bars(genres)):''}${frs.length?box('Biggest franchises',bars(frs)):''}
+    ${years.length?box('Entries by year',bars(years)):''}
+  </div>`;
+}
+function viewWrapped(arg){
+  const years=allYears();
+  if(!years.length)return `<h1>Year wrapped</h1><div class="panel empty"><p>Wrapped is built from the dates on your entries. Add a start or finish date to a few things and come back.</p></div>`;
+  const cy=new Date().getFullYear();
+  const y=Number(arg)||(years.includes(cy)?cy:years[0]);
+  const logs=[];db.entries.forEach(e=>e.dates.forEach(r=>{if(runYear(r)===y)logs.push({e,r});}));
+  const ents=[...new Set(logs.map(l=>l.e))];
+  const picker=`<p>${years.map(v=>`<a class="chip${v===y?' sel':''}" href="#/wrapped/${v}">${v}</a>`).join(' ')}</p>`;
+  if(!ents.length)return `<h1>Year wrapped</h1>${picker}<div class="panel empty">Nothing dated in ${y}.</div>`;
+  const repeats=logs.filter(l=>{const first=l.e.dates.map(runDate).filter(Boolean).sort()[0];return runDate(l.r)>first;}).length;
+  const typeRows=TYPE_KEYS.map(k=>[TYPES[k].icon+' '+TYPES[k].label,ents.filter(e=>e.type===k).length]).filter(r=>r[1]);
+  const monthCounts=Array(12).fill(0);logs.forEach(l=>{const d=runDate(l.r);if(d)monthCounts[Number(d.slice(5,7))-1]++;});
+  const bm=monthCounts.indexOf(Math.max(...monthCounts));
+  const feelScore=e=>({love:2,like:1,meh:0,dislike:-1,hate:-2}[e.feeling]??-3);
+  const top=[...ents].filter(e=>e.stars>=4||e.feeling==='love').sort((a,b)=>(b.stars==null?-1:b.stars)-(a.stars==null?-1:a.stars)||feelScore(b)-feelScore(a)).slice(0,5);
+  const genres=topN(countBy(ents.flatMap(e=>e.genres),g=>g),3);
+  const frs=topN(countBy(ents,e=>frName(e)),3);
+  const hours=ents.filter(e=>(e.type==='game'||e.type==='online')&&e.details.hours).reduce((s,e)=>s+Number(e.details.hours),0);
+  const pages=ents.filter(e=>e.type==='book'&&e.status==='finished'&&e.details.pages).reduce((s,e)=>s+Number(e.details.pages),0);
+  const rooms=ents.filter(e=>e.type==='escape'&&e.details.escaped);
+  const roomsYes=rooms.filter(e=>e.details.escaped==='Yes').length;
+  const list=arr=>arr.length?`<ul>${arr.map(e=>`<li><a href="#/entry/${e.id}">${esc(e.title)}</a></li>`).join('')}</ul>`:'<p class="muted">None this year.</p>';
+  const steaks=ents.filter(e=>e.food==='steak'),cods=ents.filter(e=>e.food==='codliver'),crackers=ents.filter(e=>e.food==='cracker'||e.feeling==='hate');
+  const sorted=[...logs].sort((a,b)=>runDate(a.r).localeCompare(runDate(b.r)));
+  const card=(h,body)=>`<div class="wrap-card"><h3>${h}</h3>${body}</div>`;
+  return `<h1>Year wrapped</h1>${picker}
+  <div class="wrap-hero"><div class="muted">${y} in review</div><div class="big">${logs.length}</div><div>things logged across ${ents.length} entr${ents.length===1?'y':'ies'}${repeats?` (${repeats} rewatch/reread${repeats===1?'':'es'})`:''}</div></div>
+  <div class="wrap-cards">
+    ${card('✦ By type',bars(typeRows))}
+    ${card('❀ Busiest month',`<div class="big">${MONTHS[bm]}</div><div class="muted">${monthCounts[bm]} logged</div>`)}
+    ${genres.length?card('☾ Favourite genres',`<ol>${genres.map(([g,c])=>`<li>${esc(g)} (${c})</li>`).join('')}</ol>`):''}
+    ${frs.length?card('❦ Franchises you lived in',`<ol>${frs.map(([g,c])=>`<li>${esc(g)} (${c})</li>`).join('')}</ol>`):''}
+    ${pages?card('📖 Pages finished',`<div class="big">${num(pages)}</div>`):''}
+    ${hours?card('🎮 Game hours (total on those games)',`<div class="big">${num(hours)}</div>`):''}
+    ${rooms.length?card('🗝️ Escape rooms',`<div class="big">${roomsYes}/${rooms.length}</div><div class="muted">escaped</div>`):''}
+  </div>
+  <div class="wrap-cards">
+    ${card('★ Highlights',list(top))}
+    ${card('🥩 Steak (fun and good)',list(steaks))}
+    ${card('🐟 Cod liver oil (good for you)',list(cods))}
+    ${card('🍘 Stale crackers &amp; hates',list(crackers))}
+  </div>
+  <p class="muted" style="text-align:center">First of the year: ${esc(sorted[0].e.title)} (${fmtDate(runDate(sorted[0].r))}) · Last: ${esc(sorted[sorted.length-1].e.title)} (${fmtDate(runDate(sorted[sorted.length-1].r))})</p>`;
+}
+function viewSettings(){
+  return `<h1>Settings &amp; files</h1>
+  <div class="panel"><h2>Library files</h2><p>${esc(storageStatus)}</p>
+  <p>Import all or selected records from another library. Link a JSON file to write a copy after each save.</p>
+  <div class="chips">${native?'<button class="btn" data-act="link">Link a new file</button><button class="btn" data-act="share">Share backup</button>':''}
+  <button class="btn" data-act="export">Export backup</button><button class="btn" data-act="import">Import and merge</button></div></div>
+  <div class="panel"><h2>Look &amp; readability</h2>
+    <div class="row2">
+      <label>Theme<select data-change="set" data-k="theme">${opt('auto','Match my device',settings.theme)}${opt('light','Light (parchment)',settings.theme)}${opt('dark','Dark (candlelit)',settings.theme)}</select></label>
+      <label>Font<select data-change="set" data-k="font">${opt("system","System sans serif",settings.font)}${opt("serif","Serif",settings.font)}</select></label>
+      <label>Text size: ${settings.size}px<input type="range" min="15" max="26" step="1" value="${settings.size}" data-change="set" data-k="size" style="padding:0"></label>
+      <label style="align-self:end"><input type="checkbox" data-change="set" data-k="spacious" ${settings.spacious?'checked':''} style="width:auto;min-height:0"> Extra-roomy spacing</label>
+    </div></div>
+  <div class="panel"><h2>About</h2><p class="muted" style="margin-bottom:0">Tip: in a note, write [[Another Entry Title]] and it becomes a link. Types, detail fields, rating scales and link relations are defined near the top of the script, so you can change them freely.</p></div>`;
+}
+
+/* ---------- editor ---------- */
+function newDraft(){return {id:'',type:'book',title:'',creator:'',franchise:'',genres:'',status:'planned',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],created:''};}
+function openEditor(id){
+  if(id){const e=byId(id);if(!e)return;ed=JSON.parse(JSON.stringify(e));ed.franchise=frName(e);ed.genres=e.genres.join(', ');}
+  else ed=newDraft();
+  edInitial=JSON.stringify(ed);
+  const o=$('#overlay');o.hidden=false;paintEditor();
+  setTimeout(()=>{const t=$('#editor')&&$('#editor').elements.title;if(t)t.focus();},30);
+}
+function paintEditor(){
+  const o=$('#overlay'),sc=o.scrollTop;o.innerHTML=editorHTML();o.scrollTop=sc;storeDraft();
+}
+function storeDraft(){if(ed)localStorage.setItem('marginalia.draft',JSON.stringify({data:ed,initial:edInitial}));}
+document.addEventListener('input',ev=>{if(ed&&ev.target.closest('#editor')){syncDraft();storeDraft();}if(ev.target.matches('[data-change="fr-notes"],[data-change="tl-note"]')){const f=frById(ev.target.dataset.f);if(ev.target.dataset.change==='fr-notes')f.notes=ev.target.value;else f.timelines.find(t=>t.id===ev.target.dataset.t).items[+ev.target.dataset.i].note=ev.target.value;f.updated=now();saveLocal();}});
+function closeEditor(force){
+  if(!force&&ed){syncDraft();if(JSON.stringify(ed)!==edInitial&&!confirm('Discard your changes?'))return;}
+  localStorage.removeItem('marginalia.draft');ed=null;$('#overlay').hidden=true;$('#overlay').innerHTML='';
+}
+function editorHTML(){
+  const d=ed,T=TYPES[d.type];
+  const others=db.entries.filter(e=>e.id!==d.id).sort(byTitle);
+  const linkOpts=cur=>`<option value="">— choose an entry —</option>`+others.map(e=>opt(e.id,TYPES[e.type].icon+' '+e.title,cur)).join('');
+  const relOpts=cur=>Object.entries(REL).map(([k,v])=>opt(k,v.out,cur)).join('');
+  const gcount=countBy(db.entries.flatMap(e=>e.genres),g=>g);
+  const have=d.genres.split(',').map(s=>s.trim().toLowerCase());
+  const gsug=topN(gcount,12).map(x=>x[0]).filter(g=>!have.includes(g));
+  const fld=f=>{
+    const v=d.details[f.k]===undefined?'':d.details[f.k];
+    if(f.kind==='select')return `<label>${esc(f.label)}<select name="d_${f.k}"><option value="">—</option>${f.options.map(o=>opt(o,o,v)).join('')}</select></label>`;
+    return `<label>${esc(f.label)}<input name="d_${f.k}" type="${f.kind==='number'?'number':'text'}" ${f.kind==='number'?'step="any" inputmode="decimal"':''} value="${esc(v)}"></label>`;
+  };
+  return `<div class="modal" role="dialog" aria-modal="true" aria-label="${d.id?'Edit entry':'New entry'}">
+  <form id="editor" autocomplete="off">
+    <div class="modal-head"><h2>${d.id?'Edit entry':'Log something'}</h2><button type="button" class="btn ghost" data-act="ed-close">Close ✕</button></div>
+    <fieldset><legend>What is it?</legend><div class="chips">${TYPE_KEYS.map(k=>`<button type="button" class="chip${d.type===k?' sel':''}" aria-pressed="${d.type===k}" data-act="ed-type" data-v="${k}">${TYPES[k].icon} ${TYPES[k].label}</button>`).join('')}</div></fieldset>
+    <div class="row2">
+      <label>Title<input name="title" type="text" value="${esc(d.title)}" required></label>
+      <label>${esc(T.creator)}<input name="creator" type="text" value="${esc(d.creator)}"></label>
+    </div>
+    <div class="row2">
+      <label>Franchise<input name="franchise" type="text" list="fr-list" value="${esc(d.franchise)}" placeholder="optional"></label>
+      <datalist id="fr-list">${[...db.franchises].sort(byName).map(f=>`<option value="${esc(f.name)}">`).join('')}</datalist>
+      <label>Genres (comma separated)<input name="genres" type="text" value="${esc(d.genres)}"></label>
+    </div>
+    ${gsug.length?`<div class="chips" style="margin:-.4rem 0 .9rem"><span class="muted small">Used before:</span>${gsug.map(g=>`<button type="button" class="chip genre" data-act="ed-genre" data-v="${esc(g)}">＋ ${esc(g)}</button>`).join('')}</div>`:''}
+    <div class="row2"><label>Status<select name="status">${STATUSES.map(s=>opt(s[0],s[1],d.status)).join('')}</select></label></div>
+
+    <fieldset><legend>Ratings</legend>
+      <p class="small muted" style="margin-top:0">Stars (click the same one again to clear)</p>
+      <div class="chips">${STAR_STEPS.map(n=>`<button type="button" class="chip${d.stars===n?' sel':''}" aria-pressed="${d.stars===n}" data-act="ed-star" data-v="${n}">${n===0?'0':n+' ★'}</button>`).join('')}</div>
+      <p class="small muted">How did it feel?</p>
+      <div class="chips">${FEELINGS.map(f=>`<button type="button" class="chip${d.feeling===f.k?' sel':''}" aria-pressed="${d.feeling===f.k}" data-act="ed-feel" data-v="${f.k}">${f.emoji} ${f.label}</button>`).join('')}</div>
+      <p class="small muted">Food scale (fun? good?)</p>
+      <div class="chips">${FOODS.map(f=>`<button type="button" class="chip${d.food===f.k?' sel':''}" aria-pressed="${d.food===f.k}" data-act="ed-food" data-v="${f.k}" title="${esc(f.hint)}">${f.emoji} ${f.label} <span class="small">(${esc(f.hint)})</span></button>`).join('')}</div>
+    </fieldset>
+
+    <fieldset><legend>Dates (add a run for every rewatch / reread / replay)</legend>
+      ${d.dates.map((r,i)=>`<div class="run-row">
+        <label>Started<input type="date" name="rs${i}" value="${esc(r.start)}"></label>
+        <label>Finished<input type="date" name="re${i}" value="${esc(r.end)}"></label>
+        <label>Note<input type="text" name="rn${i}" value="${esc(r.note)}" placeholder="e.g. reread with Sam"></label>
+        <div class="chips"><button type="button" class="btn small" data-act="ed-today-s" data-i="${i}">Started today</button><button type="button" class="btn small" data-act="ed-today-e" data-i="${i}">Finished today</button><button type="button" class="btn small danger" data-act="ed-delrun" data-i="${i}" aria-label="Remove run">✕</button></div></div>`).join('')}
+      <p style="margin-bottom:0"><button type="button" class="btn small" data-act="ed-addrun">＋ Add a date / run</button></p>
+    </fieldset>
+
+    <fieldset><legend>${T.icon} ${esc(T.label)} details</legend><div class="row2" style="margin-bottom:0">${T.fields.map(fld).join('')}</div></fieldset>
+
+    <label>Notes <span class="muted small">(write [[Another Title]] to link to another entry)</span><textarea name="notes">${esc(d.notes)}</textarea></label>
+
+    <fieldset style="margin-top:1rem"><legend>Links to other entries</legend>
+      ${d.links.map((l,i)=>`<div class="run-row"><label>This<select name="lr${i}">${relOpts(l.rel)}</select></label><label>Entry<select name="lt${i}">${linkOpts(l.to)}</select></label><div><button type="button" class="btn small danger" data-act="ed-dellink" data-i="${i}" aria-label="Remove link">✕</button></div></div>`).join('')}
+      <p style="margin-bottom:0"><button type="button" class="btn small" data-act="ed-addlink">＋ Link to another entry</button></p>
+    </fieldset>
+
+    <div class="sticky-actions"><button type="button" class="btn" data-act="ed-close">Cancel</button><button type="submit" class="btn primary">Save entry</button></div>
+  </form></div>`;
+}
+function syncDraft(){
+  const f=$('#editor');if(!f||!ed)return;
+  const g=n=>{const el=f.elements[n];return el?el.value:'';};
+  ed.title=g('title');ed.creator=g('creator');ed.franchise=g('franchise');ed.genres=g('genres');ed.status=g('status');ed.notes=g('notes');
+  ed.dates=ed.dates.map((r,i)=>({start:g('rs'+i),end:g('re'+i),note:g('rn'+i)}));
+  ed.links=ed.links.map((l,i)=>({rel:g('lr'+i),to:g('lt'+i)}));
+  for(const fl of TYPES[ed.type].fields){
+    const v=g('d_'+fl.k);
+    if(v==='')delete ed.details[fl.k];else ed.details[fl.k]=fl.kind==='number'?Number(v):v;
+  }
+}
+function saveEditor(){
+  syncDraft();const d=ed;
+  if(!d.title.trim()){toast('Give it a title first');$('#editor').elements.title.focus();return;}
+  const before=JSON.stringify(db);
+  const fid=d.franchise.trim()?ensureFranchise(d.franchise):'';
+  const genres=[...new Set(d.genres.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean))];
+  const keep=new Set(TYPES[d.type].fields.map(f=>f.k));
+  const details={};Object.keys(d.details).forEach(k=>{if(keep.has(k))details[k]=d.details[k];});
+  const rec={id:d.id||uid(),type:d.type,title:d.title.trim(),creator:d.creator.trim(),franchiseId:fid,genres,status:d.status,
+    stars:d.stars,feeling:d.feeling,food:d.food,dates:d.dates.filter(r=>r.start||r.end||r.note),details,notes:d.notes,
+    links:d.links.filter(l=>l.to),created:d.created||now(),updated:now()};
+  const i=db.entries.findIndex(e=>e.id===rec.id);
+  if(i>=0)db.entries[i]=rec;else db.entries.push(rec);
+  if(!saveLocal()){db=JSON.parse(before);return;}closeEditor(true);render();toast(storageStatus);
+  if(i<0&&route().p==='entry')location.hash='#/entry/'+rec.id;
+}
+function deleteEntry(id){
+  const e=byId(id);if(!e||!confirm(`Delete “${e.title}”? This can't be undone.`))return;
+  db.entries=db.entries.filter(x=>x.id!==id);db.deleted[id]=now();
+  db.entries.forEach(x=>{const n=x.links.length;x.links=x.links.filter(l=>l.to!==id);if(x.links.length!==n)x.updated=now();});
+  db.franchises.forEach(f=>{let c=false;f.timelines.forEach(t=>{const n=t.items.length;t.items=t.items.filter(i=>i.entryId!==id);if(n!==t.items.length)c=true;});if(c)f.updated=now();});
+  location.hash='#/library';changed();toast('Deleted');
+}
+
+/* ---------- sync with GitHub ---------- */
+function parseLibrary(text){
+  const fail=()=>{throw Error('Invalid Marginalia backup');};
+  const data=JSON.parse(text,(k,v)=>{if(['__proto__','constructor','prototype'].includes(k))fail();return v;});
+  const obj=v=>v&&typeof v==='object'&&!Array.isArray(v);
+  const id=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,160}$/.test(v)&&!(v in Object.prototype);
+  const str=v=>typeof v==='string';
+  const stamp=v=>str(v)&&Number.isFinite(Date.parse(v));
+  const list=(v,test)=>Array.isArray(v)&&v.every(test);
+  if(!obj(data)||data.version!==1||!Array.isArray(data.entries)||!Array.isArray(data.franchises)||!obj(data.deleted||{}))fail();
+  const seen=new Set();
+  for(const r of [...data.entries,...data.franchises]){
+    if(!obj(r)||!id(r.id)||seen.has(r.id)||!stamp(r.updated)||!stamp(r.created))fail();
+    seen.add(r.id);r.updated=new Date(r.updated).toISOString();r.created=new Date(r.created).toISOString();
+  }
+  for(const [k,v] of Object.entries(data.deleted||{})){if(!id(k)||!stamp(v))fail();data.deleted[k]=new Date(v).toISOString();}
+  for(const e of data.entries){
+    if(!TYPE_KEYS.includes(e.type)||!str(e.title)||!['creator','status','notes','franchiseId','feeling','food'].every(k=>e[k]==null||str(e[k]))||
+      !list(e.genres||[],str)||!list(e.links||[],l=>obj(l)&&id(l.to)&&Object.prototype.hasOwnProperty.call(REL,l.rel))||
+      !list(e.dates||[],r=>obj(r)&&['start','end','note'].every(k=>r[k]==null||str(r[k])))||
+      !obj(e.details||{})||!Object.values(e.details||{}).every(v=>str(v)||typeof v==='number')||
+      (e.stars!=null&&!STAR_STEPS.includes(e.stars)))fail();
+  }
+  for(const f of data.franchises){
+    if(!str(f.name)||(f.notes!=null&&!str(f.notes))||!list(f.timelines||[],t=>obj(t)&&id(t.id)&&str(t.name)&&list(t.items,i=>obj(i)&&id(i.id)&&id(i.entryId)&&(i.note==null||str(i.note)))))fail();
+  }
+  return normalize(data);
+}
+function dismissImport(){pending=null;$('#overlay').hidden=true;$('#overlay').innerHTML='';}
+function preview(text){
+  try{const source=parseLibrary(text);pending=source;
+    const records=[...source.entries.map(e=>[e.id,e.title]),...source.franchises.map(f=>[f.id,'Franchise · '+f.name]),...Object.keys(source.deleted).map(k=>['del:'+k,'Deletion · '+(byId(k)?.title||frById(k)?.name||k)])];
+    const o=$('#overlay');o.hidden=false;
+    o.innerHTML='<div class="modal" role="dialog"><h2>Import library</h2><p>Select the records to merge. Newer edits win for the same record.</p><button class="btn" id="pickAll">Select all</button> <button class="btn" id="pickNone">Select none</button><div id="picks">'+records.map(([k,n])=>'<label><input type="checkbox" checked value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</div><p id="counts" role="status"></p><button class="btn" id="dropImport">Cancel</button> <button class="btn primary" id="applyImport">Apply merge</button></div>';
+    let result;
+    function calculate(){
+      const selected=new Set([...o.querySelectorAll('#picks input:checked')].map(el=>el.value));
+      const entries=source.entries.filter(e=>selected.has(e.id));
+      const franchises=source.franchises.filter(f=>selected.has(f.id)||entries.some(e=>e.franchiseId===f.id&&!frById(f.id)));
+      const deleted=Object.fromEntries(Object.entries(source.deleted).filter(([k])=>selected.has('del:'+k)));
+      result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,deleted})));
+      const before=new Map([...db.entries,...db.franchises].map(r=>[r.id,JSON.stringify(r)]));
+      const after=[...result.entries,...result.franchises];const added=after.filter(r=>!before.has(r.id)).length;
+      const unchanged=after.filter(r=>before.get(r.id)===JSON.stringify(r)).length;
+      $('#counts').textContent=added+' added · '+(after.length-added-unchanged)+' updated · '+unchanged+' retained · '+(before.size+added-after.length)+' removed. Required franchises are included.';
+      $('#applyImport').disabled=!selected.size;
+    }
+    $('#picks').onchange=calculate;
+    for(const [k,on] of [['pickAll',true],['pickNone',false]])$('#'+k).onclick=()=>{o.querySelectorAll('#picks input').forEach(el=>el.checked=on);calculate();};
+    $('#dropImport').onclick=dismissImport;
+    $('#applyImport').onclick=()=>{const previous=db;db=result;if(!saveLocal()){db=previous;return;}dismissImport();render();toast(storageStatus);};
+    calculate();
+  }catch(e){dismissImport();toast('Import failed: '+e.message);}
+}
+function mergeData(a,b){
+  const out={version:1,entries:[],franchises:[],deleted:{}};
+  const del={};
+  for(const src of [a.deleted||{},b.deleted||{}])for(const k in src)if(!del[k]||src[k]>del[k])del[k]=src[k];
+  const pick=(x,y)=>{const m=new Map();for(const r of [...x,...y]){const o=m.get(r.id);if(!o||(r.updated||'')>(o.updated||''))m.set(r.id,r);}
+    return [...m.values()].filter(r=>!(del[r.id]&&del[r.id]>=(r.updated||'')));};
+  out.entries=pick(a.entries||[],b.entries||[]);
+  let frs=pick(a.franchises||[],b.franchises||[]).sort((p,q)=>(p.created||'').localeCompare(q.created||''));
+  const seen=new Map(),remap={},keep=[];
+  for(const f of frs){
+    const k=f.name.trim().toLowerCase();
+    if(seen.has(k)){
+      const kp=seen.get(k);remap[f.id]=kp.id;
+      (f.timelines||[]).forEach(t=>{if(!kp.timelines.some(x=>x.id===t.id))kp.timelines.push(t);});
+      if(f.notes&&!(kp.notes||'').includes(f.notes))kp.notes=(kp.notes?kp.notes+'\n\n':'')+f.notes;
+      kp.updated=now();del[f.id]=now();
+    }else{seen.set(k,f);keep.push(f);}
+  }
+  out.franchises=keep;out.deleted=del;
+  const ids=new Set(keep.map(f=>f.id));
+  out.entries.forEach(e=>{
+    if(e.franchiseId&&remap[e.franchiseId]){e.franchiseId=remap[e.franchiseId];e.updated=now();}
+    else if(e.franchiseId&&!ids.has(e.franchiseId)){e.franchiseId='';e.updated=now();}
+  });
+  return normalize(out);
+}
+/* ---------- chrome (header) ---------- */
+function applyTheme(){
+  const dark=settings.theme==='dark'||(settings.theme==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches);
+  const r=document.documentElement;
+  r.dataset.theme=dark?'dark':'light';r.dataset.font=settings.font;
+  r.style.setProperty('--fs',settings.size+'px');
+  document.body.classList.toggle('spacious',!!settings.spacious);
+  const tb=$('#themebtn');if(tb)tb.textContent=dark?'☀ Light':'☾ Dark';
+}
+function updateChrome(){
+  const b=$('#syncbtn');
+  if(b){
+    b.textContent=storageStatus;b.title='Open library file settings';
+  }
+  const q=$('#q');if(q&&document.activeElement!==q&&q.value!==F.q)q.value=F.q;
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click',ev=>{
+  const el=ev.target.closest('[data-act]');if(!el)return;
+  const a=el.dataset.act,v=el.dataset.v,i=el.dataset.i!==undefined?Number(el.dataset.i):null;
+  const fr=el.dataset.f&&frById(el.dataset.f);
+  const tline=fr&&el.dataset.t?fr.timelines.find(t=>t.id===el.dataset.t):null;
+  switch(a){
+    case 'new':openEditor();break;
+    case 'edit':openEditor(el.dataset.id);break;
+    case 'delete':deleteEntry(el.dataset.id);break;
+    case 'samples':loadSamples();break;
+    case 'theme':{const dark=document.documentElement.dataset.theme==='dark';settings.theme=dark?'light':'dark';saveSettings();applyTheme();break;}
+    case 'sync':location.hash='#/settings';break;
+    case 'quick':F=defaults();if(el.dataset.k)F.include[el.dataset.k]=[v];break;
+    case 'untag':F[el.dataset.side][el.dataset.k]=F[el.dataset.side][el.dataset.k].filter(x=>x!==v);render();break;
+    case 'unrange':F[el.dataset.k]='';render();break;
+    case 'clear-filters':F=defaults();render();break;
+    /* editor */
+    case 'ed-close':closeEditor();break;
+    case 'ed-type':syncDraft();ed.type=v;paintEditor();break;
+    case 'ed-star':syncDraft();ed.stars=ed.stars===Number(v)?null:Number(v);paintEditor();break;
+    case 'ed-feel':syncDraft();ed.feeling=ed.feeling===v?'':v;paintEditor();break;
+    case 'ed-food':syncDraft();ed.food=ed.food===v?'':v;paintEditor();break;
+    case 'ed-genre':syncDraft();ed.genres=(ed.genres.trim().replace(/,\s*$/,'')+(ed.genres.trim()?', ':'')+v);paintEditor();break;
+    case 'ed-addrun':syncDraft();ed.dates.push({start:'',end:'',note:''});paintEditor();break;
+    case 'ed-delrun':syncDraft();ed.dates.splice(i,1);paintEditor();break;
+    case 'ed-today-s':syncDraft();ed.dates[i].start=today();paintEditor();break;
+    case 'ed-today-e':syncDraft();ed.dates[i].end=today();paintEditor();break;
+    case 'ed-addlink':syncDraft();ed.links.push({rel:'related',to:''});paintEditor();break;
+    case 'ed-dellink':syncDraft();ed.links.splice(i,1);paintEditor();break;
+    /* franchises */
+    case 'new-franchise':{const n=prompt('Franchise name?');if(n&&n.trim()){const id=ensureFranchise(n);changed();location.hash='#/franchise/'+id;}break;}
+    case 'fr-rename':{const n=prompt('New name?',fr.name);if(n&&n.trim()&&n.trim()!==fr.name){if(db.franchises.some(x=>x.id!==fr.id&&x.name.toLowerCase()===n.trim().toLowerCase())){toast('A franchise with that name exists');break;}fr.name=n.trim();fr.updated=now();changed();}break;}
+    case 'fr-del':{if(confirm(`Delete the franchise “${fr.name}”? Entries stay, they just lose the franchise.`)){db.entries.forEach(e=>{if(e.franchiseId===fr.id){e.franchiseId='';e.updated=now();}});db.franchises=db.franchises.filter(x=>x.id!==fr.id);db.deleted[fr.id]=now();location.hash='#/franchises';changed();}break;}
+    case 'tl-create':{const inp=$('#tl-new');const n=inp.value.trim();if(!n){toast('Name the timeline first');break;}fr.timelines.push({id:uid(),name:n,items:[]});fr.updated=now();changed();break;}
+    case 'tl-rename':{const n=prompt('New name?',tline.name);if(n&&n.trim()){tline.name=n.trim();fr.updated=now();changed();}break;}
+    case 'tl-del':{if(confirm(`Delete the timeline “${tline.name}”?`)){fr.timelines=fr.timelines.filter(t=>t!==tline);fr.updated=now();changed();}break;}
+    case 'tl-add':{const s=$('#tl-add-'+tline.id);if(!s.value){toast('Choose an entry to add');break;}tline.items.push({id:uid(),entryId:s.value,note:''});fr.updated=now();changed();break;}
+    case 'tl-remove':tline.items.splice(i,1);fr.updated=now();changed();break;
+    case 'tl-up':if(i>0){[tline.items[i-1],tline.items[i]]=[tline.items[i],tline.items[i-1]];fr.updated=now();changed();}break;
+    case 'tl-down':if(i<tline.items.length-1){[tline.items[i+1],tline.items[i]]=[tline.items[i],tline.items[i+1]];fr.updated=now();changed();}break;
+    /* settings */
+    case 'link':case 'share':if(native)native.action(a);break;
+    case 'export':{if(native){native.action('export');break;}const blob=new Blob([JSON.stringify(db,null,1)],{type:'application/json'});const u=URL.createObjectURL(blob);const l=document.createElement('a');l.href=u;l.download='marginalia-backup-'+today()+'.json';l.click();setTimeout(()=>URL.revokeObjectURL(u),2000);break;}
+    case 'import':window.MarginaliaAndroid?native.action('import'):$('#importfile').click();break;
+  }
+});
+document.addEventListener('change',ev=>{
+  const el=ev.target.closest('[data-change]');if(!el)return;
+  const k=el.dataset.k,c=el.dataset.change;
+  if(c==='facet'){const side=el.dataset.side,v=el.dataset.v,other=side==='include'?'exclude':'include';F[side][k]=(F[side][k]||[]).filter(x=>x!==v);if(el.checked){F[side][k].push(v);F[other][k]=(F[other][k]||[]).filter(x=>x!==v);}render();}
+  else if(c==='filter'){F[k]=el.value;render();}
+  else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}}
+  else if(c==='fr-notes'){const f=frById(el.dataset.f);if(f){f.notes=el.value;f.updated=now();changed();}}
+  else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
+});
+document.addEventListener('submit',ev=>{if(ev.target.id==='editor'){ev.preventDefault();saveEditor();}});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&ed)closeEditor();});
+$('#q').addEventListener('input',e=>{F.q=e.target.value;if(route().p!=='library')location.hash='#/library';else render();});
+$('#importfile').addEventListener('change',e=>{
+  const file=e.target.files[0];if(!file)return;
+  const rd=new FileReader();
+  rd.onload=()=>{preview(rd.result);e.target.value='';};
+  rd.readAsText(file);
+});
+window.addEventListener('hashchange',render);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(settings.theme==='auto')applyTheme();});
+
+/* ---------- sample data ---------- */
+function loadSamples(){
+  const t=now();
+  const mk=o=>Object.assign({id:uid(),type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'finished',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],created:t,updated:t},o);
+  const dune=ensureFranchise('Dune');
+  const book=mk({title:'Dune',creator:'Frank Herbert',franchiseId:dune,genres:['sci-fi','classic'],stars:5,feeling:'love',food:'steak',dates:[{start:'2024-01-03',end:'2024-02-01',note:'first read'},{start:'2026-03-01',end:'2026-03-20',note:'reread'}],details:{pages:612,format:'Paper'},notes:'Sample notes. Entries can be linked inline, like [[Dune: Part One]].'});
+  const film=mk({type:'film',title:'Dune: Part One',creator:'Denis Villeneuve',franchiseId:dune,genres:['sci-fi'],stars:4,feeling:'like',food:'burger',dates:[{start:'',end:'2024-03-10',note:''}],details:{year:2021,where:'Home'},links:[{rel:'adaptation_of',to:book.id}]});
+  const game=mk({type:'game',title:'Hollow Knight',creator:'Team Cherry',status:'ongoing',genres:['metroidvania'],stars:4,feeling:'like',dates:[{start:'2026-10-01',end:'',note:''}],details:{platform:'Switch',hours:23,completion:48}});
+  const room=mk({type:'escape',title:"The Alchemist's Study",creator:'Example Escape Co.',genres:['mystery'],stars:3,feeling:'like',food:'codliver',dates:[{start:'',end:'2026-09-14',note:'with friends'}],details:{escaped:'Yes',timeLeft:'03:12',players:4,hints:2}});
+  const play=mk({type:'play',title:'Hamlet',creator:'William Shakespeare',status:'planned'});
+  db.entries.push(book,film,game,room,play);
+  const f=frById(dune);f.timelines.push({id:uid(),name:'Release order',items:[{id:uid(),entryId:book.id,note:'1965'},{id:uid(),entryId:film.id,note:'2021'}]});f.notes='Sample franchise notes. Timelines live below.';f.updated=now();
+  changed();
+}
+
+/* ---------- go ---------- */
+window.MarginaliaNative={preview,status(msg){storageStatus=msg;render();toast(msg);}};
+window.marginaliaBack=()=>{if(pending){dismissImport();return true;}if(ed){closeEditor();return true;}if(route().p!=='home'){location.hash='#/';return true;}return false;};
+document.addEventListener('toggle',ev=>{const k=ev.target.dataset?.group;if(k){if(ev.target.open)opened.add(k);else opened.delete(k);}},true);
+applyTheme();render();
+const savedDraft=loadJSON('marginalia.draft');
+if(savedDraft){ed=savedDraft.data;edInitial=savedDraft.initial;$('#overlay').hidden=false;paintEditor();}
+else if(native&&!native.linked()&&!localStorage.getItem('welcomed')){localStorage.setItem('welcomed','1');location.hash='#/settings';}
+})();
+</script>
+</body>
+</html>
