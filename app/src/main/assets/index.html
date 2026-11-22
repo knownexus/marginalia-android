@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-pdJMUgUlmqzG5UvV+icy+Fo/phGdHb9qLwyj6UgI7bA='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-+QFbeN+mInwvjbdDsHia+zIRWN4haSIqEQTIqu0KhTE='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -2741,8 +2741,19 @@ function dismissImport(){pending=null;$('#overlay').hidden=true;$('#overlay').in
 function preview(text){
   try{const source=parseLibrary(text);pending=source;
     const records=[...source.entries.map(e=>[e.id,e.title]),...source.franchises.map(f=>[f.id,'Franchise · '+f.name]),...source.lists.map(l=>[l.id,'List · '+l.name]),...source.views.map(v=>[v.id,'View · '+v.name]),...Object.keys(source.deleted).map(k=>['del:'+k,'Deletion · '+(byId(k)?.title||frById(k)?.name||k)])];
+    // sort every record into what the import would do with it, so the list reads Added / Updated / Already up to date
+    const classes=(()=>{try{
+      const all=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries:source.entries,franchises:source.franchises,lists:source.lists,views:source.views,dismissed:source.dismissed,tagRules:source.tagRules,deleted:source.deleted})));
+      const had=new Map([...db.entries,...db.franchises,...db.lists,...db.views].map(r=>[r.id,canon(r)])),m=new Map();
+      for(const r of [...all.entries,...all.franchises,...all.lists,...all.views])m.set(r.id,!had.has(r.id)?'added':had.get(r.id)===canon(r)?'same':'updated');
+      for(const e of source.entries){const cur=byId(e.id);if(cur&&cur.type==='book'&&e.type==='fanfic')m.set(e.id,'updated');}
+      return m;}catch(x){return new Map();}})();
+    const by={added:[],updated:[],same:[],del:[]};
+    for(const [k,n] of records)by[k.startsWith('del:')?'del':(classes.get(k)||'added')].push([k,n]);
+    const picksHTML=[['added','Added'],['updated','Updated'],['same','Already up to date'],['del','Deletions']].filter(([st])=>by[st].length).map(([st,label])=>
+      '<details'+((st==='added'||st==='updated')&&by[st].length<=500?' open':'')+'><summary><b>'+label+'</b> ('+by[st].length+')</summary>'+by[st].map(([k,n])=>'<label><input type="checkbox" checked value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</details>').join('');
     const o=$('#overlay');o.hidden=false;
-    o.innerHTML='<div class="modal" role="dialog"><h2>Import library</h2><p>Select the records to merge. Newer edits win for the same record.</p>'+(importSkipped.length?'<p class="muted small" role="status">'+importSkipped.length+' item'+(importSkipped.length===1?'':'s')+' in the file could not be read and '+(importSkipped.length===1?'was':'were')+' left out: '+esc(importSkipped.slice(0,5).join('; '))+(importSkipped.length>5?'; …':'')+'</p>':'')+'<button class="btn" id="pickAll">Select all</button> <button class="btn" id="pickNone">Select none</button><div id="picks">'+records.map(([k,n])=>'<label><input type="checkbox" checked value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</div><p id="counts" role="status"></p><button class="btn" id="dropImport">Cancel</button> <button class="btn primary" id="applyImport">Apply merge</button></div>';
+    o.innerHTML='<div class="modal" role="dialog"><h2>Import library</h2><p>Select the records to merge. Newer edits win for the same record.</p>'+(importSkipped.length?'<p class="muted small" role="status">'+importSkipped.length+' item'+(importSkipped.length===1?'':'s')+' in the file could not be read and '+(importSkipped.length===1?'was':'were')+' left out: '+esc(importSkipped.slice(0,5).join('; '))+(importSkipped.length>5?'; …':'')+'</p>':'')+'<button class="btn" id="pickAll">Select all</button> <button class="btn" id="pickNone">Select none</button><div id="picks">'+picksHTML+'</div><p id="counts" role="status"></p><button class="btn" id="dropImport">Cancel</button> <button class="btn primary" id="applyImport">Apply merge</button></div>';
     let result;
     function calculate(){
       const selected=new Set([...o.querySelectorAll('#picks input:checked')].map(el=>el.value));
