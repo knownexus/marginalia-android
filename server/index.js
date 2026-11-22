@@ -33,6 +33,8 @@ async function init() {
       expires TIMESTAMPTZ NOT NULL
     );
     CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS restricted BOOLEAN NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS libraries (
       user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       data TEXT NOT NULL,
@@ -84,17 +86,18 @@ const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 function validName(u) { return typeof u === 'string' && /^[a-z0-9_.-]{3,32}$/.test(u); }
 function validPw(p) { return typeof p === 'string' && p.length >= 8 && p.length <= 200; }
 
-async function newSession(userId) {
+// A session created while must_reset is set is "restricted": it can only change the password.
+async function newSession(userId, restricted = false) {
   const token = crypto.randomBytes(32).toString('base64url');
-  await pool.query('INSERT INTO sessions(token_hash,user_id,expires) VALUES($1,$2,now()+$3::interval)', [sha(token), userId, SESSION_DAYS + ' days']);
+  await pool.query('INSERT INTO sessions(token_hash,user_id,expires,restricted) VALUES($1,$2,now()+$3::interval,$4)', [sha(token), userId, SESSION_DAYS + ' days', restricted]);
   return token;
 }
 async function auth(req) {
   const m = /^Bearer (\S+)$/.exec(req.headers.authorization || '');
   if (!m) throw new HttpError(401, 'Sign in required');
-  const r = await pool.query('SELECT u.id, u.username FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires>now()', [sha(m[1])]);
+  const r = await pool.query('SELECT u.id, u.username, s.restricted FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires>now()', [sha(m[1])]);
   if (!r.rows[0]) throw new HttpError(401, 'Session expired. Sign in again.');
-  return { id: r.rows[0].id, username: r.rows[0].username, tokenHash: sha(m[1]) };
+  return { id: r.rows[0].id, username: r.rows[0].username, restricted: r.rows[0].restricted, tokenHash: sha(m[1]) };
 }
 
 /* ---------- routes ---------- */
@@ -114,22 +117,25 @@ async function api(req, res, url) {
     let id;
     try { id = (await pool.query('INSERT INTO users(username,pw_salt,pw_hash) VALUES($1,$2,$3) RETURNING id', [username, salt, hash])).rows[0].id; }
     catch (e) { if (e.code === '23505') throw new HttpError(409, 'That username is taken'); throw e; }
-    return send(res, 200, { username, token: await newSession(id) }, cors);
+    return send(res, 200, { username, token: await newSession(id), mustChange: false }, cors);
   }
 
   if (route === 'POST /api/login') {
     const username = String(body.username || '').trim().toLowerCase(), ip = clientIp(req);
     throttle('ip:' + ip, 40); throttle('user:' + username, 10);
-    const r = await pool.query('SELECT id, pw_salt, pw_hash FROM users WHERE username=$1', [username]);
+    const r = await pool.query('SELECT id, pw_salt, pw_hash, must_reset FROM users WHERE username=$1', [username]);
     const row = r.rows[0];
     // Always hash, so unknown usernames cost the same as wrong passwords.
     const hash = await scrypt(String(body.password || ''), row ? row.pw_salt : '00'.repeat(16));
     if (!row || !safeEq(hash, row.pw_hash)) { fail('ip:' + ip); fail('user:' + username); throw new HttpError(401, 'Wrong username or password'); }
     attempts.delete('user:' + username);
-    return send(res, 200, { username, token: await newSession(row.id) }, cors);
+    return send(res, 200, { username, token: await newSession(row.id, row.must_reset), mustChange: row.must_reset }, cors);
   }
 
   const user = await auth(req);
+
+  if (user.restricted && route !== 'POST /api/logout' && route !== 'POST /api/password')
+    throw new HttpError(403, 'Choose a new password first', { code: 'must_change' });
 
   if (route === 'POST /api/logout') {
     await pool.query('DELETE FROM sessions WHERE token_hash=$1', [user.tokenHash]);
@@ -141,8 +147,10 @@ async function api(req, res, url) {
     if (!validPw(body.newPassword)) throw new HttpError(400, 'New password must be at least 8 characters');
     const row = (await pool.query('SELECT pw_salt, pw_hash FROM users WHERE id=$1', [user.id])).rows[0];
     if (!safeEq(await scrypt(String(body.password || ''), row.pw_salt), row.pw_hash)) { fail('pw:' + user.id); throw new HttpError(401, 'Current password is wrong'); }
+    if (safeEq(body.password, body.newPassword)) throw new HttpError(400, 'Choose a different password from the current one');
     const salt = crypto.randomBytes(16).toString('hex');
-    await pool.query('UPDATE users SET pw_salt=$1, pw_hash=$2 WHERE id=$3', [salt, await scrypt(body.newPassword, salt), user.id]);
+    await pool.query('UPDATE users SET pw_salt=$1, pw_hash=$2, must_reset=false WHERE id=$3', [salt, await scrypt(body.newPassword, salt), user.id]);
+    await pool.query('UPDATE sessions SET restricted=false WHERE token_hash=$1', [user.tokenHash]);
     await pool.query('DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2', [user.id, user.tokenHash]); // sign out other devices
     return send(res, 200, { ok: true }, cors);
   }
@@ -188,7 +196,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, req.method === 'HEAD' ? '' : page, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     return send(res, 404, { error: 'Not found' });
   } catch (e) {
-    if (e instanceof HttpError) return send(res, e.status, { error: e.message }, cors);
+    if (e instanceof HttpError) return send(res, e.status, Object.assign({ error: e.message }, e.extra), cors);
     console.error(e);
     return send(res, 500, { error: 'Server error' }, cors);
   }

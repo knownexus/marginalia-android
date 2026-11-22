@@ -22,7 +22,7 @@ Sync is optional. Without signing in, the library stays on the device as before.
 
 `server/` is a small Node server that serves the page and stores one library per account in Postgres. Set `DATABASE_URL` and `INVITE_CODE` (registration is closed when it's unset) and run `node server/index.js`. The `Dockerfile` builds it. The Android app now has the Internet permission and reaches only the hosted address, enforced by the page's Content-Security-Policy. To use your own server, change the address in `index.html` (`API_BASE` and the CSP `connect-src`) and in the unit-test hash policy by editing the script as usual.
 
-To reset a forgotten password, run `npm ci` in `server/`, then `DATABASE_URL=<database URL> NEW_PASSWORD=<new password> node reset-password.js <username>`. Use the Postgres service's public URL when running it from your own computer. It signs that account out everywhere and leaves its library untouched.
+To reset a password, run `npm ci` in `server/`, then `DATABASE_URL=<database URL> node reset-password.js <username>`. Use the Postgres service's public URL from your own computer. It sets a random temporary password (printed once) and flags the account. At the next sign-in the user is asked to choose a new password, and nothing else works until they do. Add `--flag-only` to force a change without touching the current password, or set `TEMP_PASSWORD` to pick the temporary one. Either way the account is signed out everywhere and its library is untouched.
 
 ### Use it on desktop
 

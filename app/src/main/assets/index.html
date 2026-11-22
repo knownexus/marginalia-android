@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-AFGbrNd38TkOd1gk9V1TbmtzEqeCU6PnccfkhCRVWco='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-8CajoDFwhPLO0mzUCvR9WV77hbFQAqlwqYrnl5MburY='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -354,7 +354,7 @@ async function restoreLink(){
 /* ---------- account & sync (optional; the library always works offline) ---------- */
 const API_BASE=/^https?:$/.test(location.protocol)?location.origin:'https://web-production-ac96f798.up.railway.app';
 const LS_SYNC='marginalia.sync.v1';
-let sync=Object.assign({user:'',token:'',owner:'',last:''},loadJSON(LS_SYNC)||{});
+let sync=Object.assign({user:'',token:'',owner:'',last:'',mustChange:false},loadJSON(LS_SYNC)||{});
 let syncStatus='',syncing=false,syncAgain=false,syncTimer=null,skipSchedule=false,deferredRender=false;
 let authMode='login',authErr='',authBusy=false,pwOpen=false;
 const saveSync=()=>{try{localStorage.setItem(LS_SYNC,JSON.stringify(sync));}catch(e){}};
@@ -370,15 +370,18 @@ async function api(method,path,body,rev){
   let j=null;try{j=await r.json();}catch(e){}
   return {status:r.status,body:j||{}};
 }
-function signedOut(msg){sync.token='';sync.user='';saveSync();clearTimeout(syncTimer);setSync(msg||'');render();}
+function signedOut(msg){sync.token='';sync.user='';sync.mustChange=false;saveSync();clearTimeout(syncTimer);setSync(msg||'');render();}
+function needPassword(){sync.mustChange=true;saveSync();clearTimeout(syncTimer);setSync('Choose a new password to continue syncing');render();}
 async function syncNow(){
   if(!sync.token)return;
+  if(sync.mustChange){setSync('Choose a new password to continue syncing');return;}
   if(syncing){syncAgain=true;return;}
   syncing=true;setSync('Syncing…');
   try{
     for(let attempt=0;attempt<4;attempt++){
       const g=await api('GET','/api/library');
       if(g.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
+      if(g.status===403&&g.body.code==='must_change')return needPassword();
       if(g.status!==200)throw Error(g.body.error||'Server error '+g.status);
       const remote=g.body.data?normalize(g.body.data):null;
       let merged=db;
@@ -420,7 +423,8 @@ async function submitAuth(form){
       }
     }
     if(sync.owner&&sync.owner!==user){db=normalize({});skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}}
-    sync.user=user;sync.owner=user;saveSync();authBusy=false;pwOpen=false;
+    sync.user=user;sync.owner=user;sync.mustChange=!!r.body.mustChange;saveSync();authBusy=false;pwOpen=false;
+    if(sync.mustChange){toast('Choose a new password to finish signing in');setSync('Choose a new password to continue syncing');location.hash='#/settings';render();return;}
     toast('Signed in as '+user);render();syncNow();
   }catch(e){authBusy=false;authErr=e instanceof TypeError?'Cannot reach the server. Check your connection.':e.message;render();}
 }
@@ -428,9 +432,11 @@ async function signOut(){try{await api('POST','/api/logout');}catch(e){}signedOu
 async function changePassword(form){
   const r=await api('POST','/api/password',{password:form.elements.password.value,newPassword:form.elements.newPassword.value}).catch(()=>null);
   if(!r){toast('Cannot reach the server');return;}
-  if(r.status===200){pwOpen=false;render();toast('Password changed. Other devices were signed out.');}else toast(r.body.error||'Could not change password');
+  if(r.status===200){pwOpen=false;sync.mustChange=false;saveSync();setSync('');render();toast('Password changed. Other devices were signed out.');syncNow();}else toast(r.body.error||'Could not change password');
 }
 function accountPanel(){
+  if(sync.token&&sync.mustChange)return `<div class="panel"><h2>Choose a new password</h2><p>An administrator asked for a password change on <b>${esc(sync.user)}</b>. Syncing is paused until you choose a new one. Your library on this device is safe.</p>
+  <form id="pwform" class="row2"><label>Temporary or current password<input type="password" name="password" autocomplete="current-password" required></label><label>New password (8+ characters)<input type="password" name="newPassword" autocomplete="new-password" minlength="8" required></label><div class="chips" style="align-self:end"><button class="btn primary" type="submit">Save new password</button><button class="btn" type="button" data-act="signout">Sign out</button></div></form></div>`;
   if(sync.token)return `<div class="panel"><h2>Account &amp; sync</h2><p>Signed in as <b>${esc(sync.user)}</b>. ${esc(syncStatus||'')}</p>
   <p class="muted">This library is saved on this device first, then merged with your account using the same rules as Import. Other devices signed in to this account stay in step. Everything keeps working offline.</p>
   <div class="chips"><button class="btn" data-act="sync-now">Sync now</button><button class="btn" data-act="chpass">Change password</button><button class="btn" data-act="signout">Sign out</button></div>
