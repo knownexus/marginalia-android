@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-jc5oP+D1++WW72eKBT+/LzZRwnfCI0lM+kj56o0l2Zw='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-kjBDiECVLVJvOcQ6P5Y/dRQipfOccSW2hmh7DreSLyQ='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -292,11 +292,36 @@ const statusLabel=k=>(STATUSES.find(s=>s[0]===k)||[k,k])[1];
 const FEELINGS=[
   {k:'love',label:'Love',emoji:'💗'},{k:'like',label:'Like',emoji:'🙂'},{k:'meh',label:'Meh',emoji:'😐'},
   {k:'dislike',label:'Dislike',emoji:'🙁'},{k:'hate',label:'Hate',emoji:'💢'}];
-const FOODS=[
-  {k:'steak',label:'Steak',emoji:'🥩',hint:'fun and good'},
-  {k:'burger',label:'Hamburger',emoji:'🍔',hint:'fun, not so good'},
-  {k:'codliver',label:'Cod liver oil',emoji:'🐟',hint:'not fun, but good'},
-  {k:'cracker',label:'Stale cracker',emoji:'🍘',hint:'not fun, not good'}];
+/* Mixed rating: a second rating that combines two questions. Every scale stores the same four answers, so switching
+   scales only relabels them and never loses a rating.  hh = yes to both, hl = yes to the first only,
+   lh = yes to the second only, ll = no to both. */
+const MIX_KEYS=['hh','hl','lh','ll'];
+const FOOD_TO_MIX={steak:'hh',burger:'hl',codliver:'lh',cracker:'ll'};   // the old "food scale" values
+const MIX_SCALES={
+  food:{name:'Food scale',axes:['Fun?','Good?'],opts:{hh:{emoji:'🥩',label:'Steak',hint:'fun and good'},hl:{emoji:'🍔',label:'Hamburger',hint:'fun, not so good'},lh:{emoji:'🐟',label:'Cod liver oil',hint:'not fun, but good'},ll:{emoji:'🍘',label:'Stale cracker',hint:'not fun, not good'}}},
+  quality:{name:'Enjoyment and quality',axes:['Enjoyable?','Well made?'],opts:{hh:{emoji:'🌟',label:'Brilliant',hint:'enjoyable and well made'},hl:{emoji:'🍿',label:'Guilty pleasure',hint:'enjoyable, not well made'},lh:{emoji:'🎓',label:'Worthy',hint:'well made, not enjoyable'},ll:{emoji:'🗑️',label:'A miss',hint:'neither'}}},
+  effort:{name:'Effort and reward',axes:['Easy going?','Rewarding?'],opts:{hh:{emoji:'🏖️',label:'Easy and rewarding',hint:'effortless and worth it'},hl:{emoji:'🍬',label:'Easy but slight',hint:'effortless, not much back'},lh:{emoji:'⛰️',label:'Hard but worth it',hint:'demanding and rewarding'},ll:{emoji:'🧱',label:'A slog',hint:'demanding and not worth it'}}},
+  heart:{name:'Heart and head',axes:['Heart','Head'],opts:{hh:{emoji:'💞',label:'Loved and respected',hint:'moved me and impressed me'},hl:{emoji:'❤️',label:'Heart only',hint:'loved it, flaws and all'},lh:{emoji:'🧠',label:'Head only',hint:'admired it, but it left me cold'},ll:{emoji:'🌫️',label:'Forgettable',hint:'neither'}}},
+  weight:{name:'Light and deep',axes:['Light?','Deep?'],opts:{hh:{emoji:'🌈',label:'Light and deep',hint:'easy to read, with something to say'},hl:{emoji:'☀️',label:'Light and breezy',hint:'easy, and that is all'},lh:{emoji:'🌧️',label:'Heavy and deep',hint:'serious, and worth it'},ll:{emoji:'🌫️',label:'Heavy and shallow',hint:'hard going with little to show'}}}
+};
+const MIX_CUSTOM_DEFAULT={hh:'Yes to both',hl:'First only',lh:'Second only',ll:'Neither'};
+let mixMigrated=false;   // set when a library in the old format was converted, so it can be saved once in the new one
+const migrateMix=e=>{if(e&&e.food!==undefined){if(!e.mix&&FOOD_TO_MIX[e.food])e.mix=FOOD_TO_MIX[e.food];delete e.food;mixMigrated=true;}return e;};
+const migrateViewFilter=v=>{const f=v&&v.filter;if(!f)return v;for(const side of ['include','exclude']){const x=f[side];if(x&&x.food){x.mix=[...new Set([...(x.mix||[]),...x.food.map(k=>FOOD_TO_MIX[k]).filter(Boolean)])];delete x.food;}}return v;};
+function mixScale(){
+  const id=(typeof settings==='object'&&settings.mixScale)||'food';
+  if(id==='off')return null;
+  if(id==='custom'){
+    const c=settings.customMix||{},o=c.opts||{},ax=c.axes||[];
+    return {id:'custom',name:(c.name||'').trim()||'My scale',axes:[ax[0]||'First question?',ax[1]||'Second question?'],
+      opts:Object.fromEntries(MIX_KEYS.map(k=>[k,{emoji:(o[k]&&o[k].emoji)||'',label:(o[k]&&o[k].label)||MIX_CUSTOM_DEFAULT[k],hint:(o[k]&&o[k].hint)||''}]))};
+  }
+  return Object.assign({id:MIX_SCALES[id]?id:'food'},MIX_SCALES[MIX_SCALES[id]?id:'food']);
+}
+const mixOpts=()=>{const sc=mixScale();return sc?MIX_KEYS.map(k=>Object.assign({k},sc.opts[k])):[];};
+const mixOf=k=>{const sc=mixScale();return sc&&sc.opts[k]?Object.assign({k},sc.opts[k]):null;};
+const mixCell=e=>{const o=mixOf(e.mix);return o?o.label:(e.mix||'');};
+const mixTitle=(k,extra)=>{const o=mixOf(k);return o?esc(((o.emoji?o.emoji+' ':'')+o.label+(o.hint?' ('+o.hint+')':'')))+(extra||''):'';};
 const REL={
   adaptation_of:{out:'is an adaptation of',in:'was adapted as'},
   sequel_of:{out:'is a sequel to',in:'is followed by'},
@@ -306,7 +331,6 @@ const REL={
   inspired_by:{out:'was inspired by',in:'inspired'},
   related:{out:'is related to',in:'is related to'}};
 const feelOf=k=>FEELINGS.find(f=>f.k===k);
-const foodOf=k=>FOODS.find(f=>f.k===k);
 
 /* ---------- state ---------- */
 const LS_DATA='marginalia.data.v1',LS_SET='marginalia.settings.v1';
@@ -348,7 +372,7 @@ catch(err){document.body.textContent='The library could not be read. Reopen Marg
 // Desktop windows default to a smaller text size than phones; a size the user picks is kept.
 const desktop=!native&&matchMedia('(min-width:900px) and (hover:hover) and (pointer:fine)').matches;
 const defaultSize=desktop?15:18;
-let settings=Object.assign({theme:'auto',font:'system',size:null,spacious:false},loadJSON(LS_SET)||{});
+let settings=Object.assign({theme:'auto',font:'system',size:null,spacious:false,mixScale:'food',customMix:null},loadJSON(LS_SET)||{});
 // Earlier versions saved the old default (18) whenever any setting changed, so treat it as unset on desktop.
 if(settings.size===18&&desktop)settings.size=null;
 const textSize=()=>settings.size||defaultSize;
@@ -358,10 +382,10 @@ const opened=new Set();
 function loadJSON(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
 function normalize(d){
   d=d||{};
-  d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'planned',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],cover:'',url:'',listIds:[],created:now(),updated:now()},e,{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[],listIds:e.listIds||[]}));
+  d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'planned',stars:null,feeling:'',mix:'',dates:[],details:{},notes:'',links:[],cover:'',url:'',listIds:[],workId:'',created:now(),updated:now()},migrateMix(Object.assign({},e)),{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[],listIds:e.listIds||[]}));
   d.franchises=(d.franchises||[]).map(f=>Object.assign({name:'',notes:'',created:now(),updated:now()},f,{timelines:f.timelines||[]}));
   d.lists=(d.lists||[]).map(l=>Object.assign({name:'',notes:'',created:now(),updated:now()},l));
-  d.views=(d.views||[]).map(v=>Object.assign({name:'',filter:{},pinned:false,created:now(),updated:now()},v));
+  d.views=(d.views||[]).map(v=>migrateViewFilter(Object.assign({name:'',filter:{},pinned:false,created:now(),updated:now()},v)));
   d.dismissed=Array.isArray(d.dismissed)?d.dismissed:[];
   d.deleted=d.deleted||{};
   d.version=1;
@@ -445,10 +469,10 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false,addingAccount=false;
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
   version_history:false,offline_app:false,quick_add:false,sync_notices:false,
   covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false,
-  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false};
+  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false,editions:false};
 const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
   covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions',
-  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo'};
+  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo',editions:'Editions'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
@@ -747,7 +771,7 @@ function addQuick(){
   const t=now(),dates=[];
   if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});
   else if(q.status==='ongoing')dates.push({start:q.date||today(),end:'',note:''});
-  db.entries.push({id:uid(),type:q.type,title:q.title,creator:q.creator,franchiseId:q.franchise?ensureFranchise(q.franchise):'',genres:[...new Set(q.genres)],status:q.status,stars:q.stars,feeling:'',food:'',dates,details:{},notes:q.notes.join('\n'),links:[],cover:'',url:'',listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],created:t,updated:t});
+  db.entries.push({id:uid(),type:q.type,title:q.title,creator:q.creator,franchiseId:q.franchise?ensureFranchise(q.franchise):'',genres:[...new Set(q.genres)],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:{},notes:q.notes.join('\n'),links:[],cover:'',url:'',listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t});
   if(!saveLocal()){db.entries.pop();return;}
   toast('Added “'+q.title+'”');render();const n=$('#quick');if(n)n.focus();
 }
@@ -872,7 +896,7 @@ function viewLists(){
   const ls=[...db.lists].sort(byName);
   return `<h1>Lists</h1><p class="muted">Collections that cut across franchises: “to read this winter”, “recommended by Sam”, “comfort rewatches”.</p>
   <div class="panel"><div style="display:flex;gap:.5rem;flex-wrap:wrap"><input id="list-new" type="text" placeholder="New list name" style="max-width:22rem" aria-label="New list name"><button class="btn primary" data-act="list-create">＋ Create list</button></div></div>
-  ${ls.length?`<div class="grid">${ls.map(l=>{const n=db.entries.filter(e=>inList(e,l.id)).length;return `<a class="card" href="#/list/${l.id}"><h3>☰ ${esc(l.name)}</h3><div class="muted">${n} entr${n===1?'y':'ies'}</div></a>`;}).join('')}</div>`:'<div class="panel empty"><p>No lists yet. Create one above, then add entries to it from its page or from an entry.</p></div>'}`;
+  ${ls.length?`<div class="grid">${ls.map(l=>{const n=workReps(db.entries.filter(e=>inList(e,l.id))).length;return `<a class="card" href="#/list/${l.id}"><h3>☰ ${esc(l.name)}</h3><div class="muted">${n} entr${n===1?'y':'ies'}</div></a>`;}).join('')}</div>`:'<div class="panel empty"><p>No lists yet. Create one above, then add entries to it from its page or from an entry.</p></div>'}`;
 }
 function viewList(id){
   const l=listById(id);
@@ -882,8 +906,8 @@ function viewList(id){
   <h1 style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center">☰ ${esc(l.name)} <button class="btn small" data-act="list-rename" data-l="${l.id}">Rename</button> <button class="btn small danger" data-act="list-del" data-l="${l.id}">Delete</button></h1>
   ${shareControls('list',l.id)}
   <div class="panel"><h2>Notes</h2><textarea data-change="list-notes" data-l="${l.id}" placeholder="Why these belong together…">${esc(l.notes)}</textarea></div>
-  <h2>Entries (${mine.length})</h2>
-  ${mine.length?`<div class="grid">${mine.map(e=>`<div>${cardHTML(e)}<div class="prog"><button class="btn small" data-act="list-remove" data-l="${l.id}" data-id="${e.id}">Remove from list</button></div></div>`).join('')}</div>`:'<p class="muted">Nothing here yet.</p>'}
+  <h2>Entries (${workReps(mine).length})</h2>
+  ${mine.length?`<div class="grid">${workReps(mine).map(e=>`<div>${cardHTML(e)}<div class="prog"><button class="btn small" data-act="list-remove" data-l="${l.id}" data-id="${e.id}">Remove from list</button></div></div>`).join('')}</div>`:'<p class="muted">Nothing here yet.</p>'}
   <div class="panel"><label>Add an entry<select id="list-add-${l.id}"><option value="">— choose an entry —</option>${others.map(e=>opt(e.id,TYPES[e.type].icon+' '+e.title,'')).join('')}</select></label>
   <p style="margin-bottom:0"><button class="btn" data-act="list-add" data-l="${l.id}">＋ Add to list</button></p></div>`;
 }
@@ -960,8 +984,8 @@ const cleanText=s=>String(s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g
 function hash32(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
 const pick_=(r,...names)=>{for(const n of names){const k=Object.keys(r).find(x=>x.toLowerCase()===n);if(k&&r[k]!=='')return r[k];}return '';};
 function importEntry(o){
-  return {id:o.id,type:o.type,title:o.title,creator:o.creator||'',franchiseId:o.franchiseId||'',genres:[...new Set((o.genres||[]).map(g=>g.trim().toLowerCase()).filter(Boolean))],status:o.status||'finished',stars:o.stars==null?null:o.stars,feeling:'',food:'',
-    dates:o.dates||[],details:o.details||{},notes:o.notes||'',links:[],cover:'',url:o.url||'',listIds:[],created:o.created||now(),updated:IMPORT_STAMP};
+  return {id:o.id,type:o.type,title:o.title,creator:o.creator||'',franchiseId:o.franchiseId||'',genres:[...new Set((o.genres||[]).map(g=>g.trim().toLowerCase()).filter(Boolean))],status:o.status||'finished',stars:o.stars==null?null:o.stars,feeling:'',mix:'',
+    dates:o.dates||[],details:o.details||{},notes:o.notes||'',links:[],cover:'',url:o.url||'',listIds:[],workId:'',created:o.created||now(),updated:IMPORT_STAMP};
 }
 /* Audible, through a Libation (or OpenAudible-style) export, as JSON or CSV. */
 const AUD_DOMAIN={uk:'co.uk',us:'com',ca:'ca',au:'com.au',de:'de',fr:'fr',in:'in',it:'it',jp:'co.jp',es:'es',br:'com.br'};
@@ -1206,6 +1230,7 @@ function libCard(e){
     <div class="meta">${quickStars(e)}</div>
     ${(p||d)?`<div class="meta muted">${p?esc(p):''} ${d?'· '+fmtDate(d):''}</div>`:''}
     ${e.genres.length?`<div class="chips" style="margin-top:.3rem">${genreBtns(e)}</div>`:''}
+    ${editionChipsBtn(e)}
     <div class="prog">${quickState(e)}${quickList(e)}</div></div>`;
 }
 /* select many */
@@ -1218,7 +1243,7 @@ function bulkBar(){
     <select data-change="bulk-status" aria-label="Set status for the selected"><option value="">Set status…</option>${STATUSES.map(s=>`<option value="${s[0]}">${esc(s[1])}</option>`).join('')}</select>
     ${feat('lists')?`<select data-change="bulk-list" aria-label="Add the selected to a list"><option value="">Add to list…</option>${[...db.lists].sort(byName).map(l=>opt(l.id,l.name,'')).join('')}<option value="__new">＋ New list…</option></select>`:''}
     <button type="button" class="btn small" data-act="bulk-genre" data-v="add">＋ Genre</button><button type="button" class="btn small" data-act="bulk-genre" data-v="remove">− Genre</button>
-    <button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
+    ${editionsOn()?'<button type="button" class="btn small" data-act="bulk-link" title="Count the selected books as one book with several editions">Link as editions</button>':''}<button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
 }
 const updateBulkBar=()=>{const w=$('#bulkwrap');if(w)w.innerHTML=bulkBar();};
 const pickedEntries=()=>[...picked].map(byId).filter(Boolean);
@@ -1252,6 +1277,7 @@ function previewHTML(e){
   const link=feat('covers')?safeUrl(e.url):'';
   return `<div class="pv-top"><h2 style="margin:0;font-size:1.1rem">Preview</h2><button type="button" class="btn small" data-act="preview-close">Close ✕</button></div>
   <div class="card-top" style="margin-top:.8rem">${coverImg(e,'big')}<span class="type" style="font-size:1.8rem">${T.icon}</span><div><h2 style="margin:0">${esc(e.title)}</h2><div class="muted">${esc(T.label)}${e.creator?` · ${esc(e.creator)}`:''}</div></div></div>
+  ${editionsRow(e)}
   <div class="meta" style="margin:.7rem 0">${chipBtn('status',e.status,esc(statusLabel(e.status)),'')} ${fr&&feat('franchises')?chipBtn('franchise',fr.id,'❦ '+esc(fr.name),''):''} ${lists.map(l=>`<a class="chip" href="#/list/${l.id}" data-act="preview-close">☰ ${esc(l.name)}</a>`).join(' ')}</div>
   <div class="meta">${quickStars(e)}</div>
   ${progressText(e)?`<p class="muted" style="margin:.4rem 0">${esc(progressText(e))}</p>`:''}${progressBar(e)}
@@ -1279,7 +1305,7 @@ function seriesNum(e){
   return m?Number(m[1]):null;
 }
 function franchiseOrder(fid){
-  const es=db.entries.filter(e=>e.franchiseId===fid);
+  const es=workReps(db.entries.filter(e=>e.franchiseId===fid));   // one place per book, however many editions
   if(es.filter(e=>seriesNum(e)!=null).length<2)return null;
   return es.sort((a,b)=>{const x=seriesNum(a),y=seriesNum(b);if(x!=null&&y!=null)return x-y||byTitle(a,b);if(x!=null)return -1;if(y!=null)return 1;return byTitle(a,b);});
 }
@@ -1304,13 +1330,14 @@ function nextUpSection(){
   return `<div class="divider">☾</div><h2>Next up in your series</h2><div class="grid">${list.map(({f,n,done,total})=>`<div><p class="muted small" style="margin:0 0 .3rem">❦ <a href="#/franchise/${f.id}">${esc(f.name)}</a> · ${done} of ${total} done</p>${cardHTML(n)}<div class="prog"><button type="button" class="btn small" data-act="prog" data-id="${n.id}" data-k="start">▶ Start</button></div></div>`).join('')}</div>`;
 }
 function franchiseCards(mine,f){
+  mine=workReps(mine);
   if(!mine.length)return '<p class="muted">Nothing here yet. Set the franchise when logging an entry.</p>';
   const order=feat('next_up')&&franchiseOrder(f.id),nx=order?nextInOrder(order):null;
   return `<div class="grid">${mine.map(e=>e===nx?`<div><p class="small" style="margin:0 0 .3rem"><b>▶ Next up</b></p>${cardHTML(e)}</div>`:cardHTML(e)).join('')}</div>`;
 }
 function entrySeries(e){
   if(!feat('next_up')||!e.franchiseId)return '';
-  const order=franchiseOrder(e.franchiseId),i=order?order.indexOf(e):-1;if(i<0)return '';
+  const order=franchiseOrder(e.franchiseId),i=order?order.findIndex(x=>sameWork(x,e)):-1;if(i<0)return '';
   const f=frById(e.franchiseId),link=x=>`<a href="#/entry/${x.id}">${esc(x.title)}</a>`;
   return `<div class="panel"><h2>In this series</h2><p style="margin:0">Book ${i+1} of ${order.length} in ❦ <a href="#/franchise/${f.id}">${esc(f.name)}</a></p><p class="muted" style="margin:.4rem 0 0">${i>0?'Previous: '+link(order[i-1]):'First in the series'}${i<order.length-1?' · Next: '+link(order[i+1]):' · Latest in your library'}</p></div>`;
 }
@@ -1394,18 +1421,18 @@ function duplicateGroups(){
   // "Kenobi" and "Kenobi: Star Wars Legends" are the same book; two different "Star Wars: …" titles are not.
   for(const [k,pidx] of pre)for(const a of full.get(k)||[])for(const b of pidx)if(a!==b&&sharesCreator(ct[a],ct[b]))union(a,b);
   const groups=new Map();E.forEach((e,i)=>pushTo(groups,find(i),e));
-  return [...groups.values()].filter(g=>g.length>1&&!dismissed.has(dupKey(g))).sort((a,b)=>b.length-a.length||a[0].title.localeCompare(b[0].title));
+  return [...groups.values()].filter(g=>g.length>1&&!dismissed.has(dupKey(g))&&!(editionsOn()&&g[0].workId&&g.every(e=>e.workId===g[0].workId))).sort((a,b)=>b.length-a.length||a[0].title.localeCompare(b[0].title));
 }
 const keepScore=e=>(e.stars!=null?2:0)+(e.dates.length?2:0)+(e.notes?2:0)+(e.status!=='planned'?1:0)+(e.listIds||[]).length+(e.cover?1:0);
 const bestOf=g=>[...g].sort((a,b)=>keepScore(b)-keepScore(a)||a.created.localeCompare(b.created))[0];
 function dupCard(g){
   const key=dupKey(g),best=bestOf(g);
   return `<fieldset><legend>${esc(g[0].title)}</legend>${g.map(e=>`<label style="font-weight:400;display:flex;gap:.6rem;align-items:flex-start"><input type="radio" name="keep-${esc(key)}" value="${e.id}"${e===best?' checked':''} style="width:auto;min-height:0;margin-top:.45rem" aria-label="Keep this one" title="Keep this one"><input type="checkbox" name="inc-${esc(key)}" value="${e.id}" checked style="width:auto;min-height:0;margin-top:.45rem" aria-label="Merge this one in" title="Merge this one into the kept entry"><span><b>${esc(e.title)}</b>${e.creator?` <span class="muted">${esc(e.creator)}</span>`:''}<br><span class="muted small">${esc(statusLabel(e.status))}${e.stars!=null?' · ★'+e.stars:''}${e.dates.length?' · '+e.dates.length+' dated run'+(e.dates.length===1?'':'s'):''}${e.notes?' · has notes':''}${e.details&&e.details.narrator?' · read by '+esc(e.details.narrator):''} · added ${esc(fmtDate(e.created.slice(0,10)))} · <a href="#/entry/${e.id}">open</a></span></span></label>`).join('')}
-    <div class="chips"><button type="button" class="btn small primary" data-act="dup-merge" data-v="${esc(key)}">Merge into the selected one</button><button type="button" class="btn small" data-act="dup-dismiss" data-v="${esc(key)}">These are different</button></div></fieldset>`;
+    <div class="chips"><button type="button" class="btn small primary" data-act="dup-merge" data-v="${esc(key)}">Merge into the selected one</button>${editionsOn()?`<button type="button" class="btn small" data-act="dup-link" data-v="${esc(key)}" title="Keep every ticked entry and the selected one, counted as one book">Link as editions (keep all)</button>`:''}<button type="button" class="btn small" data-act="dup-dismiss" data-v="${esc(key)}">These are different</button></div></fieldset>`;
 }
 function duplicatesPanel(){
   const gs=duplicateGroups();
-  return `<div class="panel"><h2>Possible duplicates (${gs.length})</h2><p class="muted">Same type and title with a matching author. The round button picks the one to keep and the tick box says which others are merged into it (untick any that are really a different book). Dates, ratings, notes, genres, lists and links are combined, and the merged ones are removed. If they are different editions, say so and they will not be suggested again.</p>
+  return `<div class="panel"><h2>Possible duplicates (${gs.length})</h2><p class="muted">Same type and title with a matching author. The round button picks the one to keep and the tick box says which others are merged into it (untick any that are really a different book). Dates, ratings, notes, genres, lists and links are combined, and the merged ones are removed. If they are the same book read by different narrators, link them as editions to keep every review under one book. If they are different books, say so and they will not be suggested again.</p>
     ${gs.length?gs.slice(0,40).map(dupCard).join(''):'<p class="muted">No duplicates found.</p>'}${gs.length>40?`<p class="muted small">Showing 40 of ${gs.length}.</p>`:''}</div>`;
 }
 function mergeEntries(keepId,removeIds){
@@ -1414,7 +1441,7 @@ function mergeEntries(keepId,removeIds){
   for(const o of others){
     keep.dates=[...keep.dates,...o.dates.filter(r=>!keep.dates.some(x=>x.start===r.start&&x.end===r.end))];
     if(keep.stars==null)keep.stars=o.stars;
-    if(!keep.feeling)keep.feeling=o.feeling;if(!keep.food)keep.food=o.food;
+    if(!keep.feeling)keep.feeling=o.feeling;if(!keep.mix)keep.mix=o.mix;
     if((rank[o.status]||0)>(rank[keep.status]||0))keep.status=o.status;
     keep.genres=[...new Set([...keep.genres,...o.genres])];
     keep.listIds=[...new Set([...(keep.listIds||[]),...(o.listIds||[])])];
@@ -1444,7 +1471,7 @@ const filterOfView=v=>Object.assign(defaults(),JSON.parse(JSON.stringify(v.filte
 const stripEmpty=o=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>!(Array.isArray(v)&&!v.length)));
 const normF=f=>canon(Object.assign({},f,{include:stripEmpty(f.include),exclude:stripEmpty(f.exclude)}));
 const viewIsActive=v=>normF(filterOfView(v))===normF(F);
-const viewCount=v=>filteredWith(filterOfView(v)).length;
+const viewCount=v=>workReps(filteredWith(filterOfView(v))).length;
 const currentFilter=()=>JSON.parse(JSON.stringify({q:F.q,sort:F.sort,mode:F.mode,min:F.min,max:F.max,from:F.from,to:F.to,include:stripEmpty(F.include),exclude:stripEmpty(F.exclude)}));
 function viewsBar(){
   if(!feat('saved_views'))return '';
@@ -1488,11 +1515,11 @@ function coverFile(e){
   return m?'covers/'+e.id+'.'+(m[1].toLowerCase()==='jpeg'?'jpg':m[1].toLowerCase().replace(/[^a-z0-9]/g,'')):'';
 }
 function entriesCSV(){
-  const head=['Title','Type','Creator','Status','Stars','Feeling','Food scale','Genres','Franchise','Lists','Series / volume','First started','Last finished','Dated runs','Pages','Narrator','Audiobook hours','Format','Link','Cover file','Notes','Added','Updated','Id'];
+  const head=['Title','Type','Creator','Status','Stars','Feeling','Mixed rating','Genres','Franchise','Lists','Series / volume','First started','Last finished','Dated runs','Pages','Narrator','Audiobook hours','Format','Link','Cover file','Notes','Added','Updated','Edition group','Id'];
   const rows=[...db.entries].sort(byTitle).map(e=>{
     const d=e.details||{},starts=e.dates.map(r=>r.start).filter(Boolean).sort(),ends=e.dates.map(r=>r.end).filter(Boolean).sort();
-    return [e.title,(TYPES[e.type]||TYPES.book).label,e.creator,statusLabel(e.status),e.stars==null?'':e.stars,(feelOf(e.feeling)||{}).label||'',(foodOf(e.food)||{}).label||'',e.genres.join('; '),
-      (frById(e.franchiseId)||{}).name||'',(e.listIds||[]).map(i=>(listById(i)||{}).name).filter(Boolean).join('; '),d.series||'',starts[0]||'',ends[ends.length-1]||'',e.dates.length,d.pages||'',d.narrator||'',d.audioHours||'',d.format||'',e.url||'',coverFile(e),e.notes,e.created,e.updated,e.id];
+    return [e.title,(TYPES[e.type]||TYPES.book).label,e.creator,statusLabel(e.status),e.stars==null?'':e.stars,(feelOf(e.feeling)||{}).label||'',mixCell(e),e.genres.join('; '),
+      (frById(e.franchiseId)||{}).name||'',(e.listIds||[]).map(i=>(listById(i)||{}).name).filter(Boolean).join('; '),d.series||'',starts[0]||'',ends[ends.length-1]||'',e.dates.length,d.pages||'',d.narrator||'',d.audioHours||'',d.format||'',e.url||'',coverFile(e),e.notes,e.created,e.updated,e.workId||'',e.id];
   });
   return '﻿'+[head,...rows].map(r=>r.map(csvCell).join(',')).join('\r\n')+'\r\n';
 }
@@ -1593,6 +1620,74 @@ function undoLast(){
   changed();
   toast('Undone: '+u.msg+(skipped?' ('+plural(skipped,'item')+' left as they are because they changed since)':''));
 }
+/* ---------- editions: the same book read by different narrators (flag: editions) ---------- */
+/* Linked entries share a workId. Nothing is merged: each edition keeps its own rating, notes, dates and status.
+   Lists show a linked group as one book (the edition furthest along), with the others as chips. */
+const EDITION_RANK={finished:4,ongoing:3,paused:2,dropped:1,planned:0};
+const editionsOn=()=>feat('editions');
+const bestEdition=ms=>[...ms].sort((a,b)=>(EDITION_RANK[b.status]-EDITION_RANK[a.status])||((b.stars==null?-1:b.stars)-(a.stars==null?-1:a.stars))||activity(b).localeCompare(activity(a)))[0];
+function groupWorks(list){   // keeps the order of the first member of each group
+  const seen=new Map(),out=[];
+  for(const e of list){
+    if(!e.workId||!editionsOn()){out.push({rep:e,members:[e]});continue;}
+    let g=seen.get(e.workId);if(!g){g={rep:e,members:[]};seen.set(e.workId,g);out.push(g);}
+    g.members.push(e);
+  }
+  for(const g of out)if(g.members.length>1)g.rep=bestEdition(g.members);
+  return out;
+}
+const workReps=list=>editionsOn()?groupWorks(list).map(g=>g.rep):list;
+const editionsOf=e=>e.workId&&editionsOn()?db.entries.filter(x=>x.workId===e.workId):[e];   // every edition in the whole library
+const sameWork=(a,b)=>a===b||(!!a.workId&&a.workId===b.workId);
+const workTotal=()=>new Set(db.entries.map(e=>e.workId&&editionsOn()?'w:'+e.workId:e.id)).size;
+const workDone=e=>editionsOn()&&editionsOf(e).some(x=>x!==e&&(x.status==='finished'||x.status==='ongoing'));   // already read (or being read) in another edition
+function editionLabel(e){
+  const n=String((e.details||{}).narrator||'').split(/,\s+/).filter(Boolean);
+  if(n.length)return n.slice(0,2).join(', ')+(n.length>2?' +'+(n.length-2):'');
+  return (e.details&&e.details.format)||'Edition';
+}
+const editionMark=x=>(x.stars!=null?' ★'+x.stars:'')+(x.status==='finished'?' ✓':x.status==='ongoing'?' ▶':'');
+function editionChipsBtn(e){   // on interactive library cards: each chip opens that edition
+  const eds=editionsOf(e);if(eds.length<2)return '';
+  return `<div class="chips" style="margin-top:.3rem"><span class="muted small">📚 ${eds.length} editions:</span>${eds.map(x=>`<button type="button" class="chip${x.id===e.id?' sel':''}" data-act="preview" data-id="${x.id}" title="Open this edition">${esc(editionLabel(x))}${editionMark(x)}</button>`).join('')}</div>`;
+}
+function editionNote(e){    // on plain link cards
+  const eds=editionsOf(e);if(eds.length<2)return '';
+  return `<div class="meta muted small">📚 ${eds.length} editions: ${eds.map(x=>esc(editionLabel(x))+esc(editionMark(x))).join(' · ')}</div>`;
+}
+function linkEditions(ids){
+  const es=ids.map(byId).filter(Boolean);if(es.length<2)return 0;
+  const involved=new Set(es.map(e=>e.workId).filter(Boolean));
+  const group=db.entries.filter(e=>es.includes(e)||(e.workId&&involved.has(e.workId)));   // groups being joined come along whole
+  const counts=new Map();group.forEach(e=>{if(e.workId)counts.set(e.workId,(counts.get(e.workId)||0)+1);});
+  const top=[...counts.entries()].sort((a,b)=>b[1]-a[1])[0],wid=top?top[0]:'w'+uid(),t=now();
+  group.forEach(e=>{if(e.workId!==wid){e.workId=wid;e.updated=t;}});
+  return group.length;
+}
+function unlinkEdition(id){
+  const e=byId(id);if(!e||!e.workId)return;
+  const wid=e.workId,t=now();e.workId='';e.updated=t;
+  const rest=db.entries.filter(x=>x.workId===wid);
+  if(rest.length<2)rest.forEach(x=>{x.workId='';x.updated=t;});   // a group of one is no group
+}
+function editionsPanel(e){
+  if(!editionsOn())return '';
+  const eds=editionsOf(e);
+  const taken=new Set(eds.map(x=>x.id)),key=normTitle(e.title);
+  const cands=db.entries.filter(x=>x.type===e.type&&!taken.has(x.id)).sort(byTitle);
+  const likely=cands.filter(x=>{const k=normTitle(x.title);return k&&key&&(k===key||k.startsWith(key)||key.startsWith(k));});
+  const opt_=x=>opt(x.id,x.title+(x.creator?' — '+x.creator:'')+((x.details||{}).narrator?' — '+editionLabel(x):''),'');
+  const rows=eds.length>1?`<ul class="runs">${eds.map(x=>`<li>${x.id===e.id?'<b>This one</b>':`<a href="#/entry/${x.id}">${esc(editionLabel(x))}</a>`} ${statusBadge(x.status)} ${x.stars!=null?starsHTML(x.stars):''} ${(feelOf(x.feeling)||{}).emoji||''} ${x.notes?`<span class="muted small">“${esc(x.notes.replace(/\s+/g,' ').slice(0,80))}${x.notes.length>80?'…':''}”</span>`:''} <button type="button" class="btn small" data-act="edition-unlink" data-id="${x.id}">Unlink</button></li>`).join('')}</ul>`:'';
+  return `<div class="panel"><h2>Editions of this book</h2>
+    <p class="muted" style="margin-top:0">${eds.length>1?'These are the same book with different readers. They count as one book in your library, and each keeps its own rating, notes and dates.':'Link another reading of this book (a different narrator, say). They will count as one book in your library, and each keeps its own rating, notes and dates.'}</p>
+    ${rows}
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap"><select id="edition-add" aria-label="Another edition of this book" style="max-width:26rem"><option value="">— link another edition —</option>${likely.length?`<optgroup label="Likely the same book">${likely.map(opt_).join('')}</optgroup>`:''}<optgroup label="${likely.length?'Everything else':'All '+esc((TYPES[e.type]||TYPES.book).label.toLowerCase())+'s'}">${cands.filter(x=>!likely.includes(x)).map(opt_).join('')}</optgroup></select>
+    <button type="button" class="btn" data-act="edition-link" data-id="${e.id}">Link</button></div></div>`;
+}
+function editionsRow(e){   // in the preview panel
+  const eds=editionsOf(e);if(eds.length<2)return '';
+  return `<div class="chips" style="margin:.4rem 0 .8rem"><span class="muted small">📚 Editions:</span>${eds.map(x=>`<button type="button" class="chip${x.id===e.id?' sel':''}" data-act="preview" data-id="${x.id}">${esc(editionLabel(x))}${editionMark(x)}</button>`).join('')}</div>`;
+}
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
 
@@ -1621,7 +1716,7 @@ function ratingsInline(e){
   let h='';
   if(e.stars!=null)h+=starsHTML(e.stars);
   const f=feelOf(e.feeling);if(f)h+=` <span title="Feeling: ${f.label}">${f.emoji} ${f.label}</span>`;
-  const fd=foodOf(e.food);if(fd)h+=` <span title="Food scale: ${fd.label} (${fd.hint})">${fd.emoji} ${fd.label}</span>`;
+  const fd=mixOf(e.mix);if(fd)h+=` <span title="${esc(mixScale().name)}: ${esc(fd.label)}${fd.hint?' ('+esc(fd.hint)+')':''}">${esc(fd.emoji)} ${esc(fd.label)}</span>`;
   return h;
 }
 function progressText(e){
@@ -1649,6 +1744,7 @@ function cardHTML(e){
     ${e.creator?`<div class="muted">${esc(e.creator)}</div>`:''}
     <div class="meta">${statusBadge(e.status)} ${ratingsInline(e)}</div>
     ${(fr||p||d)?`<div class="meta muted">${fr?`❦ ${esc(fr)}`:''} ${p?`· ${esc(p)}`:''} ${d?`· ${fmtDate(d)}`:''}</div>`:''}
+    ${editionNote(e)}
     ${e.genres.length?`<div class="chips" style="margin-top:.4rem">${genreSpans(e)}</div>`:''}
   </a>`;
 }
@@ -1698,17 +1794,17 @@ function emptyState(){
 function viewHome(){
   const E=db.entries;if(!E.length)return emptyState();
   const yr=new Date().getFullYear();
-  const finThisYear=E.filter(e=>e.status==='finished'&&e.dates.some(r=>runYear(r)===yr)).length;
-  const ongoing=E.filter(e=>e.status==='ongoing').sort((a,b)=>activity(b).localeCompare(activity(a)));
-  const recent=[...E].sort((a,b)=>activity(b).localeCompare(activity(a))||b.created.localeCompare(a.created)).slice(0,8);
-  const planned=E.filter(e=>e.status==='planned').sort((a,b)=>b.created.localeCompare(a.created)).slice(0,6);
+  const finThisYear=workReps(E.filter(e=>e.status==='finished'&&e.dates.some(r=>runYear(r)===yr))).length;
+  const ongoing=workReps(E.filter(e=>e.status==='ongoing').sort((a,b)=>activity(b).localeCompare(activity(a))));
+  const recent=workReps([...E].sort((a,b)=>activity(b).localeCompare(activity(a))||b.created.localeCompare(a.created))).slice(0,8);
+  const planned=workReps(E.filter(e=>e.status==='planned'&&!workDone(e)).sort((a,b)=>b.created.localeCompare(a.created))).slice(0,6);
   const qs=(k,v,label,n)=>`<a class="stat" href="#/library" data-act="quick" data-k="${k}" data-v="${v}"><b>${n}</b>${label}</a>`;
   return `<h1>Welcome back</h1>
   ${quickBar()}
   <div class="stats-strip">
-    ${qs('','', 'in the library',E.length)}
+    ${qs('','', 'in the library',editionsOn()?workTotal():E.length)}
     ${qs('status','ongoing','in progress',ongoing.length)}
-    ${qs('status','planned','planned',E.filter(e=>e.status==='planned').length)}
+    ${qs('status','planned','planned',workReps(E.filter(e=>e.status==='planned'&&!workDone(e))).length)}
     ${feat('wrapped')?`<a class="stat" href="#/wrapped"><b>${finThisYear}</b>finished in ${yr}</a>`:`<div class="stat" style="cursor:default"><b>${finThisYear}</b>finished in ${yr}</div>`}
   </div>
   ${viewsStrip()}
@@ -1721,7 +1817,7 @@ function viewHome(){
 }
 function matches(e,f){
   const years=entryYears(e);
-  const vals={genre:e.genres,year:years.map(String),type:[e.type],status:[e.status],franchise:[e.franchiseId],stars:e.stars==null?[]:[String(e.stars)],feeling:[e.feeling],food:[e.food],list:e.listIds||[]};
+  const vals={genre:e.genres,year:years.map(String),type:[e.type],status:[e.status],franchise:[e.franchiseId],stars:e.stars==null?[]:[String(e.stars)],feeling:[e.feeling],mix:[e.mix],list:e.listIds||[]};
   for(const [k,values] of Object.entries(vals)){
     if((f.exclude[k]||[]).some(x=>values.includes(x)))return false;
     const inc=f.include[k]||[];
@@ -1752,11 +1848,12 @@ function filteredWith(F){   // F here is the filter being applied (the parameter
 }
 function viewLibrary(){
   if(!db.entries.length)return emptyState();
-  const list=filtered();libShown=list.map(e=>e.id);
+  const list=workReps(filtered());libShown=list.map(e=>e.id);
   const frs=[...db.franchises].sort(byName);
   const genres=[...new Set(db.entries.flatMap(e=>e.genres))].sort();
   const years=allYears();
-  const facets={type:['Type',TYPE_KEYS.map(k=>[k,TYPES[k].label])],status:['Status',STATUSES],franchise:['Franchise',frs.map(x=>[x.id,x.name])],genre:['Genre',genres.map(x=>[x,x])],feeling:['Feeling',FEELINGS.map(x=>[x.k,x.label])],food:['Food scale',FOODS.map(x=>[x.k,x.label])],stars:['Stars',STAR_STEPS.map(x=>[String(x),x+' ★'])],year:['Year',years.map(x=>[String(x),x])]};
+  const facets={type:['Type',TYPE_KEYS.map(k=>[k,TYPES[k].label])],status:['Status',STATUSES],franchise:['Franchise',frs.map(x=>[x.id,x.name])],genre:['Genre',genres.map(x=>[x,x])],feeling:['Feeling',FEELINGS.map(x=>[x.k,x.label])],mix:[(mixScale()||{}).name||'Mixed rating',mixOpts().map(x=>[x.k,x.label])],stars:['Stars',STAR_STEPS.map(x=>[String(x),x+' ★'])],year:['Year',years.map(x=>[String(x),x])]};
+  if(!mixScale())delete facets.mix;
   if(feat('lists')&&db.lists.length)facets.list=['List',[...db.lists].sort(byName).map(l=>[l.id,l.name])];
   const chips=[];
   const groups=Object.entries(facets).map(([k,[label,opts]])=>{
@@ -1778,7 +1875,7 @@ function viewLibrary(){
   ${groups}<div class="filters">${range('min','Minimum stars','stars')}${range('max','Maximum stars','stars')}${range('from','From year')}${range('to','To year')}
     <label>Sort by<select data-change="filter" data-k="sort">${opt('recent','Most recent activity',F.sort)}${opt('added','Date added',F.sort)}${opt('title','Title A–Z',F.sort)}${opt('rating','Stars (high first)',F.sort)}</select></label>
   </div>
-  </details><p>${list.length} of ${db.entries.length} shown</p><div class="chips">${chips.join('')}<button class="btn small" data-act="clear-filters">Clear all</button></div></div>
+  </details><p>${list.length} of ${editionsOn()?workTotal():db.entries.length} shown</p><div class="chips">${chips.join('')}<button class="btn small" data-act="clear-filters">Clear all</button></div></div>
   ${list.length?`<div class="grid">${list.map(libCard).join('')}</div><div id="bulkwrap">${bulkBar()}</div>`:'<div class="panel empty">Nothing matches those filters.</div>'}`;
 }
 function viewEntry(id){
@@ -1801,11 +1898,12 @@ function viewEntry(id){
     <div class="rate-grid" style="margin-top:.9rem">
       <div class="rate-box"><small>Stars</small>${e.stars!=null?starsHTML(e.stars)+` ${e.stars}/5`:'<span class="muted">not rated</span>'}</div>
       <div class="rate-box"><small>Feeling</small>${feelOf(e.feeling)?feelOf(e.feeling).emoji+' '+feelOf(e.feeling).label:'<span class="muted">—</span>'}</div>
-      <div class="rate-box"><small>Food scale</small>${foodOf(e.food)?foodOf(e.food).emoji+' '+foodOf(e.food).label+`<br><span class="muted small">${foodOf(e.food).hint}</span>`:'<span class="muted">—</span>'}</div>
+      ${mixScale()?`<div class="rate-box"><small>${esc(mixScale().name)}</small>${mixOf(e.mix)?esc(mixOf(e.mix).emoji)+' '+esc(mixOf(e.mix).label)+(mixOf(e.mix).hint?`<br><span class="muted small">${esc(mixOf(e.mix).hint)}</span>`:''):'<span class="muted">—</span>'}</div>`:''}
     </div>
     <p style="margin-top:1rem"><button class="btn" data-act="edit" data-id="${e.id}">✎ Edit</button> <button class="btn danger" data-act="delete" data-id="${e.id}">Delete</button></p>
   </div>
   ${feat('progress')&&(progressButtons(e)||progressBar(e))?`<div class="panel"><h2>Progress</h2>${progressText(e)?`<p style="margin:0">${esc(progressText(e))}</p>`:''}${progressBar(e)}${progressButtons(e)}</div>`:''}
+  ${editionsPanel(e)}
   ${entrySeries(e)}
   ${entryLists(e)}
   ${runs.length?`<div class="panel"><h2>Dates</h2><ul class="runs">${runs.map((r,i)=>`<li><b>${runs.length>1?`Run ${i+1}: `:''}</b>${r.start?fmtDate(r.start):'?'}${r.end?` → ${fmtDate(r.end)}`:(r.start?' → …':'')}${r.note?` <span class="muted">— ${esc(r.note)}</span>`:''}</li>`).join('')}</ul></div>`:''}
@@ -1821,7 +1919,7 @@ function viewEntry(id){
 function viewFranchises(){
   const frs=[...db.franchises].sort(byName);
   return `<h1>Franchises</h1><p><button class="btn primary" data-act="new-franchise">＋ New franchise</button></p>
-  ${frs.length?`<div class="grid">${frs.map(f=>{const n=db.entries.filter(e=>e.franchiseId===f.id);return `<a class="card" href="#/franchise/${f.id}"><h3>❦ ${esc(f.name)}</h3><div class="meta muted">${n.length} entr${n.length===1?'y':'ies'} · ${f.timelines.length} timeline${f.timelines.length===1?'':'s'}</div><div class="meta">${[...new Set(n.map(e=>TYPES[e.type].icon))].join(' ')}</div></a>`;}).join('')}</div>`
+  ${frs.length?`<div class="grid">${frs.map(f=>{const n=workReps(db.entries.filter(e=>e.franchiseId===f.id));return `<a class="card" href="#/franchise/${f.id}"><h3>❦ ${esc(f.name)}</h3><div class="meta muted">${n.length} entr${n.length===1?'y':'ies'} · ${f.timelines.length} timeline${f.timelines.length===1?'':'s'}</div><div class="meta">${[...new Set(n.map(e=>TYPES[e.type].icon))].join(' ')}</div></a>`;}).join('')}</div>`
   :'<div class="panel empty">No franchises yet. Type a franchise name when logging something, or create one here.</div>'}`;
 }
 function viewFranchise(id){
@@ -1849,7 +1947,7 @@ function viewFranchise(id){
   <div class="panel"><h2>Notes</h2>
     <textarea data-change="fr-notes" data-f="${f.id}" placeholder="Lore, reading order thoughts, favourite characters… Use [[Entry title]] to link to an entry.">${esc(f.notes)}</textarea>
     ${f.notes?`<details style="margin-top:.6rem"><summary>Preview with links</summary><div class="notes">${renderNotes(f.notes)}</div></details>`:''}</div>
-  <h2>Entries (${mine.length})</h2>
+  <h2>Entries (${workReps(mine).length})</h2>
   ${franchiseCards(mine,f)}
   <div class="divider">✦ ✦ ✦</div>
   <h2>Timelines</h2>
@@ -1861,7 +1959,7 @@ function viewFranchise(id){
 }
 function viewStats(){
   const E=db.entries;if(!E.length)return emptyState();
-  const fin=E.filter(e=>e.status==='finished');
+  const W=workReps(E),fin=W.filter(e=>e.status==='finished');   // counts are per book; ratings, feelings and the mixed rating stay per edition (each is its own review)
   const rated=E.filter(e=>e.stars!=null);
   const avg=rated.length?(rated.reduce((s,e)=>s+e.stars,0)/rated.length).toFixed(2):'–';
   const hours=E.filter(e=>(e.type==='game'||e.type==='online')&&e.details.hours).reduce((s,e)=>s+Number(e.details.hours),0);
@@ -1869,19 +1967,19 @@ function viewStats(){
   const logs=E.reduce((s,e)=>s+e.dates.length,0);
   const esc_=E.filter(e=>e.type==='escape'&&e.details.escaped);
   const escYes=esc_.filter(e=>e.details.escaped==='Yes').length;
-  const types=TYPE_KEYS.map(k=>[TYPES[k].icon+' '+TYPES[k].label,E.filter(e=>e.type===k).length]).filter(r=>r[1]);
-  const statuses=STATUSES.map(s=>[s[1],E.filter(e=>e.status===s[0]).length]).filter(r=>r[1]);
+  const types=TYPE_KEYS.map(k=>[TYPES[k].icon+' '+TYPES[k].label,W.filter(e=>e.type===k).length]).filter(r=>r[1]);
+  const statuses=STATUSES.map(s=>[s[1],W.filter(e=>e.status===s[0]).length]).filter(r=>r[1]);
   const stars=STAR_STEPS.map(n=>[n+' ★',E.filter(e=>e.stars===n).length]);
   const feels=FEELINGS.map(f=>[f.emoji+' '+f.label,E.filter(e=>e.feeling===f.k).length]);
-  const foods=FOODS.map(f=>[f.emoji+' '+f.label,E.filter(e=>e.food===f.k).length]);
-  const genres=topN(countBy(E.flatMap(e=>e.genres),g=>g),10).map(([g,c])=>[esc(g),c]);
-  const frs=topN(countBy(E,e=>frName(e)),8).map(([g,c])=>[esc(g),c]);
-  const years=allYears().map(y=>[String(y),E.filter(e=>entryYears(e).includes(y)).length]);
+  const mixBars=mixOpts().map(f=>[esc((f.emoji?f.emoji+' ':'')+f.label),E.filter(e=>e.mix===f.k).length]);
+  const genres=topN(countBy(W.flatMap(e=>e.genres),g=>g),10).map(([g,c])=>[esc(g),c]);
+  const frs=topN(countBy(W,e=>frName(e)),8).map(([g,c])=>[esc(g),c]);
+  const years=allYears().map(y=>[String(y),W.filter(e=>entryYears(e).includes(y)).length]);
   const avgType=TYPE_KEYS.map(k=>{const r=rated.filter(e=>e.type===k);return r.length?`<li>${TYPES[k].icon} ${TYPES[k].label}: <b>${(r.reduce((s,e)=>s+e.stars,0)/r.length).toFixed(2)}</b> ★ (${r.length})</li>`:'';}).join('');
   const box=(h,body)=>`<div class="panel"><h2>${h}</h2>${body}</div>`;
   return `<h1>Stats</h1>
   <div class="stats-strip">
-    <div class="stat" style="cursor:default"><b>${E.length}</b>entries</div>
+    <div class="stat" style="cursor:default"><b>${W.length}</b>entries</div>
     <div class="stat" style="cursor:default"><b>${fin.length}</b>finished</div>
     <div class="stat" style="cursor:default"><b>${logs}</b>dated runs</div>
     <div class="stat" style="cursor:default"><b>${avg}</b>average ★</div>
@@ -1892,7 +1990,7 @@ function viewStats(){
   <div class="two">
     ${box('By type',bars(types))}${box('By status',bars(statuses))}
     ${box('Stars',bars(stars))}${box('Feelings',bars(feels))}
-    ${box('Food scale',bars(foods))}${box('Average stars by type',avgType?`<ul>${avgType}</ul>`:'<p class="muted">No ratings yet.</p>')}
+    ${mixScale()?box(esc(mixScale().name),bars(mixBars)):''}${box('Average stars by type',avgType?`<ul>${avgType}</ul>`:'<p class="muted">No ratings yet.</p>')}
     ${genres.length?box('Top genres',bars(genres)):''}${frs.length?box('Biggest franchises',bars(frs)):''}
     ${years.length?box('Entries by year',bars(years)):''}
     ${feat('stats_plus')?statsPlusHTML():''}
@@ -1921,7 +2019,7 @@ function viewWrapped(arg){
   const rooms=ents.filter(e=>e.type==='escape'&&e.details.escaped);
   const roomsYes=rooms.filter(e=>e.details.escaped==='Yes').length;
   const list=arr=>arr.length?`<ul>${arr.map(e=>`<li><a href="#/entry/${e.id}">${esc(e.title)}</a></li>`).join('')}</ul>`:'<p class="muted">None this year.</p>';
-  const steaks=ents.filter(e=>e.food==='steak'),cods=ents.filter(e=>e.food==='codliver'),crackers=ents.filter(e=>e.food==='cracker'||e.feeling==='hate');
+  const steaks=ents.filter(e=>e.mix==='hh'),cods=ents.filter(e=>e.mix==='lh'),crackers=ents.filter(e=>e.mix==='ll'||e.feeling==='hate');   // best, worthy-but-hard and worst, whatever the scale calls them
   const sorted=[...logs].sort((a,b)=>runDate(a.r).localeCompare(runDate(b.r)));
   const card=(h,body)=>`<div class="wrap-card"><h3>${h}</h3>${body}</div>`;
   return `<h1>Year wrapped</h1>${picker}${feat('stats_plus')?`<p><button class="btn" data-act="wrapped-image" data-y="${y}">Save as image</button></p>`:''}
@@ -1938,11 +2036,23 @@ function viewWrapped(arg){
   </div>
   <div class="wrap-cards">
     ${card('★ Highlights',list(top))}
-    ${card('🥩 Steak (fun and good)',list(steaks))}
-    ${card('🐟 Cod liver oil (good for you)',list(cods))}
-    ${card('🍘 Stale crackers &amp; hates',list(crackers))}
+    ${mixScale()?`${card(mixTitle('hh'),list(steaks))}
+    ${card(mixTitle('lh'),list(cods))}
+    ${card(mixTitle('ll',' &amp; hates'),list(crackers))}`:''}
   </div>
   <p class="muted" style="text-align:center">First of the year: ${esc(sorted[0].e.title)} (${fmtDate(runDate(sorted[0].r))}) · Last: ${esc(sorted[sorted.length-1].e.title)} (${fmtDate(runDate(sorted[sorted.length-1].r))})</p>`;
+}
+function mixPanel(){
+  const cur=settings.mixScale||'food',sc=mixScale(),ids=[...Object.keys(MIX_SCALES),'custom','off'];
+  const c=settings.customMix||{},ax=c.axes||[],a0=ax[0]||'First',a1=ax[1]||'Second';
+  const quad={hh:a0+' yes, '+a1+' yes',hl:a0+' yes, '+a1+' no',lh:a0+' no, '+a1+' yes',ll:a0+' no, '+a1+' no'};
+  const preview=sc?`<div class="rate-grid" style="margin-top:.8rem">${mixOpts().map(o=>`<div class="rate-box"><small>${esc((o.emoji?o.emoji+' ':'')+o.label)}</small><span class="muted small">${esc(o.hint)}</span></div>`).join('')}</div>`:'<p class="muted" style="margin-top:.8rem">The mixed rating is hidden everywhere: the editor, filters, stats and Year wrapped. The ratings you have already given are kept.</p>';
+  const field=(label,f,val,ph,q,max)=>`<label>${label}<input type="text" data-change="mixcustom" data-f="${f}"${q?` data-q="${q}"`:''} value="${esc(val||'')}" placeholder="${esc(ph||'')}" maxlength="${max}"></label>`;
+  const custom=cur==='custom'?`<fieldset style="margin-top:1rem"><legend>Your scale</legend><div class="row2">${field('Name','name',c.name,'My scale',null,40)}${field('First question','axis0',ax[0],'e.g. Fun?',null,40)}${field('Second question','axis1',ax[1],'e.g. Good?',null,40)}</div>
+    ${MIX_KEYS.map(k=>{const o=(c.opts||{})[k]||{};return `<p class="small muted" style="margin:.8rem 0 .2rem">${esc(quad[k])}</p><div class="row2">${field('Icon','emoji',o.emoji,'🙂',k,8)}${field('Label','label',o.label,MIX_CUSTOM_DEFAULT[k],k,30)}${field('Hint','hint',o.hint,'optional',k,80)}</div>`;}).join('')}
+    <p class="muted small" style="margin-bottom:0">Changes apply the next time a page is drawn. Because every scale stores the same four answers, you can switch scales whenever you like.</p></fieldset>`:'';
+  return `<div class="panel"><h2>Mixed rating</h2><p class="muted">A second rating that combines two questions, such as “was it fun?” and “was it good?”. Choose the scale you like. Every scale stores the same four answers, so switching only changes the names and icons and never your ratings.</p>
+  <label>Scale<select data-change="set" data-k="mixScale">${ids.map(id=>opt(id,id==='custom'?'Custom…':id==='off'?'Off (hide it)':MIX_SCALES[id].name+' — '+MIX_SCALES[id].axes.join(' / '),cur)).join('')}</select></label>${preview}${custom}</div>`;
 }
 function viewSettings(){
   return `<h1>Settings &amp; files</h1>
@@ -1969,12 +2079,13 @@ function viewSettings(){
       <label>Text size: ${textSize()}px<input type="range" min="12" max="26" step="1" value="${textSize()}" data-change="set" data-k="size" style="padding:0"></label>
       <label style="align-self:end"><input type="checkbox" data-change="set" data-k="spacious" ${settings.spacious?'checked':''} style="width:auto;min-height:0"> Extra-roomy spacing</label>
     </div></div>
+  ${mixPanel()}
   <div class="panel"><h2>About</h2>${feat('shortcuts')?'<p class="muted">Shortcuts: <kbd>/</kbd> search, <kbd>n</kbd> log something,'+(feat('quick_add')?' <kbd>q</kbd> quick add,':'')+' <kbd>Ctrl</kbd>+<kbd>S</kbd> save the entry being edited, <kbd>Esc</kbd> close.</p>':''}
   <p class="muted" style="margin-bottom:0">Tip: in a note, write [[Another Entry Title]] and it becomes a link. Types, detail fields, rating scales and link relations are defined near the top of the script, so you can change them freely.</p></div>`;
 }
 
 /* ---------- editor ---------- */
-function newDraft(){return {id:'',type:'book',title:'',creator:'',franchise:'',genres:'',status:'planned',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],created:''};}
+function newDraft(){return {id:'',type:'book',title:'',creator:'',franchise:'',genres:'',status:'planned',stars:null,feeling:'',mix:'',dates:[],details:{},notes:'',links:[],created:''};}
 function openEditor(id){
   if(id){const e=byId(id);if(!e)return;ed=JSON.parse(JSON.stringify(e));ed.franchise=frName(e);ed.genres=e.genres.join(', ');}
   else ed=newDraft();
@@ -2025,8 +2136,8 @@ function editorHTML(){
       <div class="chips">${STAR_STEPS.map(n=>`<button type="button" class="chip${d.stars===n?' sel':''}" aria-pressed="${d.stars===n}" data-act="ed-star" data-v="${n}">${n===0?'0':n+' ★'}</button>`).join('')}</div>
       <p class="small muted">How did it feel?</p>
       <div class="chips">${FEELINGS.map(f=>`<button type="button" class="chip${d.feeling===f.k?' sel':''}" aria-pressed="${d.feeling===f.k}" data-act="ed-feel" data-v="${f.k}">${f.emoji} ${f.label}</button>`).join('')}</div>
-      <p class="small muted">Food scale (fun? good?)</p>
-      <div class="chips">${FOODS.map(f=>`<button type="button" class="chip${d.food===f.k?' sel':''}" aria-pressed="${d.food===f.k}" data-act="ed-food" data-v="${f.k}" title="${esc(f.hint)}">${f.emoji} ${f.label} <span class="small">(${esc(f.hint)})</span></button>`).join('')}</div>
+      ${mixScale()?`<p class="small muted">${esc(mixScale().name)} (${esc(mixScale().axes.join(' · '))})</p>
+      <div class="chips">${mixOpts().map(f=>`<button type="button" class="chip${d.mix===f.k?' sel':''}" aria-pressed="${d.mix===f.k}" data-act="ed-mix" data-v="${f.k}" title="${esc(f.hint)}">${esc(f.emoji)} ${esc(f.label)}${f.hint?` <span class="small">(${esc(f.hint)})</span>`:''}</button>`).join('')}</div>`:''}
     </fieldset>
 
     <fieldset><legend>Dates (add a run for every rewatch / reread / replay)</legend>
@@ -2073,8 +2184,8 @@ function saveEditor(){
   const details={};Object.keys(d.details).forEach(k=>{if(keep.has(k))details[k]=d.details[k];});
   const prev=db.entries.find(e=>e.id===d.id)||{};
   const rec=Object.assign({},prev,{id:d.id||uid(),type:d.type,title:d.title.trim(),creator:d.creator.trim(),franchiseId:fid,genres,status:d.status,
-    stars:d.stars,feeling:d.feeling,food:d.food,dates:d.dates.filter(r=>r.start||r.end||r.note),details,notes:d.notes,
-    links:d.links.filter(l=>l.to),cover:d.cover||'',url:normalizeUrl(d.url),listIds:prev.listIds||[],created:d.created||now(),updated:now()});
+    stars:d.stars,feeling:d.feeling,mix:d.mix,dates:d.dates.filter(r=>r.start||r.end||r.note),details,notes:d.notes,
+    links:d.links.filter(l=>l.to),cover:d.cover||'',url:normalizeUrl(d.url),listIds:prev.listIds||[],workId:prev.workId||'',created:d.created||now(),updated:now()});
   const i=db.entries.findIndex(e=>e.id===rec.id);
   if(i>=0)db.entries[i]=rec;else db.entries.push(rec);
   if(!saveLocal()){db=JSON.parse(before);return;}closeEditor(true);render();toast(storageStatus);
@@ -2105,11 +2216,11 @@ function parseLibrary(text){
   }
   for(const [k,v] of Object.entries(data.deleted||{})){if(!id(k)||!stamp(v))fail();data.deleted[k]=new Date(v).toISOString();}
   for(const e of data.entries){
-    if(!TYPE_KEYS.includes(e.type)||!str(e.title)||!['creator','status','notes','franchiseId','feeling','food'].every(k=>e[k]==null||str(e[k]))||
+    if(!TYPE_KEYS.includes(e.type)||!str(e.title)||!['creator','status','notes','franchiseId','feeling','food','mix'].every(k=>e[k]==null||str(e[k]))||(e.mix!=null&&!(e.mix===''||MIX_KEYS.includes(e.mix)))||
       !list(e.genres||[],str)||!list(e.links||[],l=>obj(l)&&id(l.to)&&Object.prototype.hasOwnProperty.call(REL,l.rel))||
       !list(e.dates||[],r=>obj(r)&&['start','end','note'].every(k=>r[k]==null||str(r[k])))||
       !obj(e.details||{})||!Object.values(e.details||{}).every(v=>str(v)||typeof v==='number')||
-      !list(e.listIds||[],id)||(e.url!=null&&!(str(e.url)&&(e.url===''||/^https?:\/\//i.test(e.url))&&e.url.length<=2000))||
+      !list(e.listIds||[],id)||(e.workId!=null&&!(e.workId===''||id(e.workId)))||(e.url!=null&&!(str(e.url)&&(e.url===''||/^https?:\/\//i.test(e.url))&&e.url.length<=2000))||
       (e.cover!=null&&!(str(e.cover)&&(e.cover===''||(e.cover.startsWith('data:image/')&&e.cover.length<=120000))))||
       (e.stars!=null&&!STAR_STEPS.includes(e.stars)))fail();
   }
@@ -2225,7 +2336,7 @@ document.addEventListener('click',ev=>{
     case 'ed-type':syncDraft();ed.type=v;paintEditor();break;
     case 'ed-star':syncDraft();ed.stars=ed.stars===Number(v)?null:Number(v);paintEditor();break;
     case 'ed-feel':syncDraft();ed.feeling=ed.feeling===v?'':v;paintEditor();break;
-    case 'ed-food':syncDraft();ed.food=ed.food===v?'':v;paintEditor();break;
+    case 'ed-mix':syncDraft();ed.mix=ed.mix===v?'':v;paintEditor();break;
     case 'ed-genre':syncDraft();ed.genres=(ed.genres.trim().replace(/,\s*$/,'')+(ed.genres.trim()?', ':'')+v);paintEditor();break;
     case 'ed-addrun':syncDraft();ed.dates.push({start:'',end:'',note:''});paintEditor();break;
     case 'ed-delrun':syncDraft();ed.dates.splice(i,1);paintEditor();break;
@@ -2287,6 +2398,10 @@ document.addEventListener('click',ev=>{
     case 'profile-forget':forgetProfile(el.dataset.id);break;
     case 'add-account':addingAccount=true;authMode='login';authErr='';render();break;
     case 'add-cancel':addingAccount=false;authErr='';render();break;
+    case 'edition-link':{const sel=$('#edition-add');if(!sel||!sel.value){toast('Choose the other edition first');break;}const snap=undoSnap(),other=byId(sel.value);linkEditions([el.dataset.id,sel.value]);changed();offerUndo('Linked “'+(other?other.title:'')+'” as another edition',snap);break;}
+    case 'edition-unlink':{const x=byId(el.dataset.id),snap=undoSnap();if(!x)break;unlinkEdition(x.id);changed();offerUndo('Unlinked “'+x.title+'” ('+editionLabel(x)+')',snap);break;}
+    case 'bulk-link':{const ids=[...picked].filter(byId);if(ids.length<2){toast('Tick at least two books to link');break;}const snap=undoSnap(),n=linkEditions(ids);picked.clear();changed();offerUndo('Linked '+n+' entries as editions of one book',snap);break;}
+    case 'dup-link':{const radio=document.querySelector('input[name="keep-'+v+'"]:checked'),ids=[...document.querySelectorAll('input[name="inc-'+v+'"]:checked')].map(x=>x.value);if(radio&&!ids.includes(radio.value))ids.push(radio.value);if(ids.length<2){toast('Tick at least two entries to link');break;}const snap=undoSnap(),n=linkEditions(ids);changed();offerUndo('Linked '+n+' entries as editions of one book',snap);break;}
     case 'export-all':exportEverything(!!($('#exp-versions')&&$('#exp-versions').checked));break;
     case 'undo':undoLast();break;
     case 'preview':openPreview(el.dataset.id);break;
@@ -2321,7 +2436,11 @@ document.addEventListener('change',ev=>{
   const k=el.dataset.k,c=el.dataset.change;
   if(c==='facet'){const side=el.dataset.side,v=el.dataset.v,other=side==='include'?'exclude':'include';F[side][k]=(F[side][k]||[]).filter(x=>x!==v);if(el.checked){F[side][k].push(v);F[other][k]=(F[other][k]||[]).filter(x=>x!==v);}render();}
   else if(c==='filter'){F[k]=el.value;render();}
-  else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}}
+  else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}if(k==='mixScale')render();}
+  else if(c==='mixcustom'){const f=el.dataset.f,q=el.dataset.q,cm=settings.customMix=settings.customMix||{name:'',axes:['',''],opts:{}};cm.axes=cm.axes||['',''];cm.opts=cm.opts||{};
+    const v=el.value;if(f==='name')cm.name=v.slice(0,40);else if(f==='axis0')cm.axes[0]=v.slice(0,40);else if(f==='axis1')cm.axes[1]=v.slice(0,40);
+    else if(MIX_KEYS.includes(q)){cm.opts[q]=cm.opts[q]||{emoji:'',label:'',hint:''};cm.opts[q][f]=v.slice(0,f==='emoji'?8:f==='label'?30:80);}
+    saveSettings();}
   else if(c==='adm-flag'||c==='adm-default'){
     const enabled=el.value===''?null:el.value==='on';
     (async()=>{const r=c==='adm-flag'?await adminCall('PUT','/api/admin/users/'+el.dataset.u+'/features',{flag:el.dataset.f,enabled}):await adminCall('PUT','/api/admin/features/default',{flag:el.dataset.f,enabled});
@@ -2375,12 +2494,12 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(set
 /* ---------- sample data ---------- */
 function loadSamples(){
   const t=now();
-  const mk=o=>Object.assign({id:uid(),type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'finished',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],created:t,updated:t},o);
+  const mk=o=>Object.assign({id:uid(),type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'finished',stars:null,feeling:'',mix:'',dates:[],details:{},notes:'',links:[],workId:'',created:t,updated:t},o);
   const dune=ensureFranchise('Dune');
-  const book=mk({title:'Dune',creator:'Frank Herbert',franchiseId:dune,genres:['sci-fi','classic'],stars:5,feeling:'love',food:'steak',dates:[{start:'2024-01-03',end:'2024-02-01',note:'first read'},{start:'2026-03-01',end:'2026-03-20',note:'reread'}],details:{pages:612,format:'Paper'},notes:'Sample notes. Entries can be linked inline, like [[Dune: Part One]].'});
-  const film=mk({type:'film',title:'Dune: Part One',creator:'Denis Villeneuve',franchiseId:dune,genres:['sci-fi'],stars:4,feeling:'like',food:'burger',dates:[{start:'',end:'2024-03-10',note:''}],details:{year:2021,where:'Home'},links:[{rel:'adaptation_of',to:book.id}]});
+  const book=mk({title:'Dune',creator:'Frank Herbert',franchiseId:dune,genres:['sci-fi','classic'],stars:5,feeling:'love',mix:'hh',dates:[{start:'2024-01-03',end:'2024-02-01',note:'first read'},{start:'2026-03-01',end:'2026-03-20',note:'reread'}],details:{pages:612,format:'Paper'},notes:'Sample notes. Entries can be linked inline, like [[Dune: Part One]].'});
+  const film=mk({type:'film',title:'Dune: Part One',creator:'Denis Villeneuve',franchiseId:dune,genres:['sci-fi'],stars:4,feeling:'like',mix:'hl',dates:[{start:'',end:'2024-03-10',note:''}],details:{year:2021,where:'Home'},links:[{rel:'adaptation_of',to:book.id}]});
   const game=mk({type:'game',title:'Hollow Knight',creator:'Team Cherry',status:'ongoing',genres:['metroidvania'],stars:4,feeling:'like',dates:[{start:'2026-10-01',end:'',note:''}],details:{platform:'Switch',hours:23,completion:48}});
-  const room=mk({type:'escape',title:"The Alchemist's Study",creator:'Example Escape Co.',genres:['mystery'],stars:3,feeling:'like',food:'codliver',dates:[{start:'',end:'2026-09-14',note:'with friends'}],details:{escaped:'Yes',timeLeft:'03:12',players:4,hints:2}});
+  const room=mk({type:'escape',title:"The Alchemist's Study",creator:'Example Escape Co.',genres:['mystery'],stars:3,feeling:'like',mix:'lh',dates:[{start:'',end:'2026-09-14',note:'with friends'}],details:{escaped:'Yes',timeLeft:'03:12',players:4,hints:2}});
   const play=mk({type:'play',title:'Hamlet',creator:'William Shakespeare',status:'planned'});
   db.entries.push(book,film,game,room,play);
   const f=frById(dune);f.timelines.push({id:uid(),name:'Release order',items:[{id:uid(),entryId:book.id,note:'1965'},{id:uid(),entryId:film.id,note:'2021'}]});f.notes='Sample franchise notes. Timelines live below.';f.updated=now();
@@ -2400,9 +2519,11 @@ window.addEventListener('resize',()=>requestAnimationFrame(()=>{
 }));
 window.marginaliaBack=()=>{if(pending){dismissImport();return true;}if(ed){closeEditor();return true;}if(route().p!=='home'){location.hash='#/';return true;}return false;};
 document.addEventListener('toggle',ev=>{const k=ev.target.dataset?.group;if(k){if(ev.target.open)opened.add(k);else opened.delete(k);}},true);
-applyTheme();render();restoreLink();setupPWA();if(sync.token)syncNow();
+applyTheme();render();restoreLink();setupPWA();
+if(mixMigrated&&!native){skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}}   // write the converted library back once
+if(sync.token)syncNow();
 const savedDraft=loadJSON('marginalia.draft');
-if(savedDraft){ed=savedDraft.data;edInitial=savedDraft.initial;$('#overlay').hidden=false;paintEditor();}
+if(savedDraft){ed=migrateMix(savedDraft.data);edInitial=savedDraft.initial;$('#overlay').hidden=false;paintEditor();}
 else if(native&&!native.linked()&&!localStorage.getItem('welcomed')){localStorage.setItem('welcomed','1');location.hash='#/settings';}
 })();
 </script>

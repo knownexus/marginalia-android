@@ -30,7 +30,8 @@ const FLAG_DEFAULTS = {
   listening_stats: false, // Audiobook hours on the Stats page and in Year wrapped
   duplicates: false,      // Tidy up: find and merge duplicate entries
   export_all: false,      // Export everything: a zip with the library, a spreadsheet, covers, settings and account data
-  undo: false             // Undo toasts (and Ctrl+Z) instead of confirm dialogs for destructive actions
+  undo: false,            // Undo toasts (and Ctrl+Z) instead of confirm dialogs for destructive actions
+  editions: false         // Link entries as editions of one book (e.g. different narrators): one place in lists and counts, separate reviews
 };
 
 const SCHEMA = `
