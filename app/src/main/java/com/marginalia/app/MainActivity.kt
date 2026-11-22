@@ -58,7 +58,9 @@ class MainActivity : ComponentActivity() {
             domStorageEnabled=true
             allowFileAccess=false
             allowContentAccess=false
-            blockNetworkLoads=true
+            // Network is needed only for optional account sync. The page's Content-Security-Policy
+            // limits requests to the Marginalia server, and navigation is blocked below.
+            blockNetworkLoads=false
         }
         web.webChromeClient=WebChromeClient()
         web.webViewClient=object: WebViewClient(){

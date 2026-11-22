@@ -1,6 +1,6 @@
 # Marginalia for Android
 
-Copy Marginalia.apk to an Android 8 or newer device and tap it in Files to install. If Android prompts, allow that file manager to install this APK. The app runs offline.
+Copy Marginalia.apk to an Android 8 or newer device and tap it in Files to install. If Android prompts, allow that file manager to install this APK. The app runs offline. Signing in to sync is optional.
 
 ### Move a library
 
@@ -15,6 +15,12 @@ Different record IDs survive a merge. For edits to the same record, the newer ti
 ### Filter the library
 
 Open **Library → Sort and filter**. Include or exclude values in each section. **Match all** requires every included genre or year within that section. **Match any** accepts one. Exclusions always win. Tap an active filter to remove it, or use **Clear all**.
+
+### Accounts and sync
+
+Sync is optional. Without signing in, the library stays on the device as before. In **Settings & files → Account & sync**, create an account (the server owner gives you an invite code) or sign in. The library is saved on the device first, then merged with the account using the same rules as **Import and merge**, so edits made offline are kept. Sign in on another device, or the desktop page, and they stay in step. Signing in as a different account on a device replaces that device's library with the new account's, after a confirmation, so profiles never mix.
+
+`server/` is a small Node server that serves the page and stores one library per account in Postgres. Set `DATABASE_URL` and `INVITE_CODE` (registration is closed when it's unset) and run `node server/index.js`. The `Dockerfile` builds it. The Android app now has the Internet permission and reaches only the hosted address, enforced by the page's Content-Security-Policy. To use your own server, change the address in `index.html` (`API_BASE` and the CSP `connect-src`) and in the unit-test hash policy by editing the script as usual.
 
 ### Use it on desktop
 

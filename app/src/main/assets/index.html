@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-GWsL3mFy/qbNXv4VopBQu0tKj6OJHKQgZVAgtJTZF7s='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-AFGbrNd38TkOd1gk9V1TbmtzEqeCU6PnccfkhCRVWco='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -288,8 +288,8 @@ function normalize(d){
   return d;
 }
 function saveLocal(){
-  try{const json=JSON.stringify(db);if(native){storageStatus=native.save(json);if(!storageStatus.startsWith('Saved'))throw Error(storageStatus);}
-  else{localStorage.setItem(LS_DATA,json);if(fileHandle)syncFile(json);else storageStatus='Saved in this browser';}return true;}
+  try{const json=JSON.stringify(db);if(native){storageStatus=native.save(json);if(!storageStatus.startsWith('Saved'))throw Error(storageStatus);scheduleSync();}
+  else{localStorage.setItem(LS_DATA,json);if(fileHandle)syncFile(json);else storageStatus='Saved in this browser';scheduleSync();}return true;}
   catch(e){storageStatus='Save failed: '+e.message;toast(storageStatus);updateChrome();return false;}
 }
 function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}}
@@ -351,6 +351,101 @@ async function restoreLink(){
     if(route().p==='settings')render();
   }catch(e){}
 }
+/* ---------- account & sync (optional; the library always works offline) ---------- */
+const API_BASE=/^https?:$/.test(location.protocol)?location.origin:'https://web-production-ac96f798.up.railway.app';
+const LS_SYNC='marginalia.sync.v1';
+let sync=Object.assign({user:'',token:'',owner:'',last:''},loadJSON(LS_SYNC)||{});
+let syncStatus='',syncing=false,syncAgain=false,syncTimer=null,skipSchedule=false,deferredRender=false;
+let authMode='login',authErr='',authBusy=false,pwOpen=false;
+const saveSync=()=>{try{localStorage.setItem(LS_SYNC,JSON.stringify(sync));}catch(e){}};
+const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
+const editingInApp=()=>{const a=document.activeElement;return !!(a&&a!==document.body&&$('#app').contains(a)&&a.matches('input,textarea,select'));};
+function setSync(msg){syncStatus=msg;updateChrome();if(route().p==='settings'&&!editingInApp())render();}
+function scheduleSync(ms){if(!sync.token||skipSchedule)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>syncNow(),ms||2000);}
+async function api(method,path,body,rev){
+  const h={};if(body!==undefined)h['Content-Type']='application/json';
+  if(sync.token)h.Authorization='Bearer '+sync.token;
+  if(rev!==undefined)h['If-Match']=String(rev);
+  const r=await fetch(API_BASE+path,{method,headers:h,body:body===undefined?undefined:JSON.stringify(body)});
+  let j=null;try{j=await r.json();}catch(e){}
+  return {status:r.status,body:j||{}};
+}
+function signedOut(msg){sync.token='';sync.user='';saveSync();clearTimeout(syncTimer);setSync(msg||'');render();}
+async function syncNow(){
+  if(!sync.token)return;
+  if(syncing){syncAgain=true;return;}
+  syncing=true;setSync('Syncing…');
+  try{
+    for(let attempt=0;attempt<4;attempt++){
+      const g=await api('GET','/api/library');
+      if(g.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
+      if(g.status!==200)throw Error(g.body.error||'Server error '+g.status);
+      const remote=g.body.data?normalize(g.body.data):null;
+      let merged=db;
+      if(remote)merged=mergeData(JSON.parse(JSON.stringify(db)),remote);
+      if(canon(merged)!==canon(db)){db=merged;skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}if(editingInApp())deferredRender=true;else render();}
+      if(!(remote&&canon(remote)===canon(merged))){
+        const p=await api('PUT','/api/library',{data:merged},g.body.rev);
+        if(p.status===409)continue;
+        if(p.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
+        if(p.status!==200)throw Error(p.body.error||'Server error '+p.status);
+      }
+      sync.last=now();saveSync();
+      setSync('Synced '+new Date(sync.last).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+      return;
+    }
+    throw Error('The library kept changing on another device. Will retry.');
+  }catch(e){
+    setSync(e instanceof TypeError?'Offline. Changes are saved on this device and will sync when you are back online.':'Sync problem: '+e.message+'. Saved on this device.');
+  }finally{
+    syncing=false;
+    if(syncAgain){syncAgain=false;scheduleSync(500);}
+    if(deferredRender&&!editingInApp()){deferredRender=false;render();}
+  }
+}
+async function submitAuth(form){
+  if(authBusy)return;
+  const v=n=>form.elements[n]?form.elements[n].value:'';
+  const username=v('username').trim().toLowerCase(),password=v('password');
+  authBusy=true;authErr='';
+  try{
+    const r=await api('POST',authMode==='register'?'/api/register':'/api/login',{username,password,invite:v('invite')});
+    if(r.status!==200)throw Error(r.body.error||'Could not sign in ('+r.status+')');
+    sync.token=r.body.token;
+    const user=r.body.username,hasLocal=db.entries.length+db.franchises.length>0;
+    if(sync.owner&&sync.owner!==user&&hasLocal){
+      if(!confirm('This device holds the library for "'+sync.owner+'". Signing in as "'+user+'" replaces it on this device with the library from "'+user+'". Export a backup first if you need that copy. Continue?')){
+        try{await api('POST','/api/logout');}catch(e){}
+        sync.token='';authBusy=false;render();return;
+      }
+    }
+    if(sync.owner&&sync.owner!==user){db=normalize({});skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}}
+    sync.user=user;sync.owner=user;saveSync();authBusy=false;pwOpen=false;
+    toast('Signed in as '+user);render();syncNow();
+  }catch(e){authBusy=false;authErr=e instanceof TypeError?'Cannot reach the server. Check your connection.':e.message;render();}
+}
+async function signOut(){try{await api('POST','/api/logout');}catch(e){}signedOut('');toast('Signed out. Your library stays on this device.');}
+async function changePassword(form){
+  const r=await api('POST','/api/password',{password:form.elements.password.value,newPassword:form.elements.newPassword.value}).catch(()=>null);
+  if(!r){toast('Cannot reach the server');return;}
+  if(r.status===200){pwOpen=false;render();toast('Password changed. Other devices were signed out.');}else toast(r.body.error||'Could not change password');
+}
+function accountPanel(){
+  if(sync.token)return `<div class="panel"><h2>Account &amp; sync</h2><p>Signed in as <b>${esc(sync.user)}</b>. ${esc(syncStatus||'')}</p>
+  <p class="muted">This library is saved on this device first, then merged with your account using the same rules as Import. Other devices signed in to this account stay in step. Everything keeps working offline.</p>
+  <div class="chips"><button class="btn" data-act="sync-now">Sync now</button><button class="btn" data-act="chpass">Change password</button><button class="btn" data-act="signout">Sign out</button></div>
+  ${pwOpen?`<form id="pwform" class="row2" style="margin-top:1rem"><label>Current password<input type="password" name="password" autocomplete="current-password" required></label><label>New password (8+ characters)<input type="password" name="newPassword" autocomplete="new-password" minlength="8" required></label><div class="chips" style="align-self:end"><button class="btn primary" type="submit">Save password</button></div></form>`:''}</div>`;
+  const reg=authMode==='register';
+  return `<div class="panel"><h2>Account &amp; sync</h2><p>Sign in to keep this library in step across your phone and computers. It still works offline, and signing in is optional.</p>
+  <form id="authform"><div class="row2"><label>Username<input type="text" name="username" autocomplete="username" required minlength="3" maxlength="32" autocapitalize="none" spellcheck="false"></label>
+  <label>Password<input type="password" name="password" autocomplete="${reg?'new-password':'current-password'}" required minlength="${reg?8:1}"></label>
+  ${reg?'<label>Invite code<input type="text" name="invite" autocomplete="off" spellcheck="false" required></label>':''}</div>
+  <div class="chips"><button class="btn primary" type="submit"${authBusy?' disabled':''}>${reg?'Create account':'Sign in'}</button><button class="btn" type="button" data-act="auth-mode">${reg?'I already have an account':'Create an account'}</button></div>
+  <p class="small" role="alert" style="color:var(--danger)">${esc(authErr)}</p></form></div>`;
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sync.token)syncNow();});
+addEventListener('online',()=>{if(sync.token)syncNow();});
+setInterval(()=>{if(sync.token&&!document.hidden)syncNow();},60000);
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
 
@@ -684,6 +779,7 @@ function viewWrapped(arg){
 }
 function viewSettings(){
   return `<h1>Settings &amp; files</h1>
+  ${accountPanel()}
   <div class="panel"><h2>Library files</h2><p>${esc(storageStatus)}</p>
   <p>Import all or selected records from another library. Link a JSON file to write a copy after each save.</p>
   ${canLink&&fileHandle?`<p>Linked file: <b>${esc(fileHandle.name)}</b></p>`:''}
@@ -907,7 +1003,7 @@ function applyTheme(){
 function updateChrome(){
   const b=$('#syncbtn');
   if(b){
-    b.textContent=storageStatus;b.title='Open library file settings';
+    b.textContent=sync.token&&!/^Save failed/.test(storageStatus)?sync.user+' · '+(syncStatus||'Signed in').split(/\.\s/)[0]:storageStatus;b.title='Open account and file settings';
   }
   const q=$('#q');if(q&&document.activeElement!==q&&q.value!==F.q)q.value=F.q;
 }
@@ -955,6 +1051,10 @@ document.addEventListener('click',ev=>{
     case 'tl-down':if(i<tline.items.length-1){[tline.items[i+1],tline.items[i]]=[tline.items[i],tline.items[i+1]];fr.updated=now();changed();}break;
     /* settings */
     case 'link':case 'share':if(native)native.action(a);else if(a==='link'&&canLink)linkFile();break;
+    case 'auth-mode':authMode=authMode==='login'?'register':'login';authErr='';render();break;
+    case 'sync-now':syncNow();break;
+    case 'signout':signOut();break;
+    case 'chpass':pwOpen=!pwOpen;render();break;
     case 'reconnect':if(fileHandle)reconnectFile();break;
     case 'unlink':if(fileHandle&&confirm('Stop saving to the linked file? The file stays as it is.'))unlinkFile();break;
     case 'export':{if(native){native.action('export');break;}const blob=new Blob([JSON.stringify(db,null,1)],{type:'application/json'});const u=URL.createObjectURL(blob);const l=document.createElement('a');l.href=u;l.download='marginalia-backup-'+today()+'.json';l.click();setTimeout(()=>URL.revokeObjectURL(u),2000);break;}
@@ -970,7 +1070,7 @@ document.addEventListener('change',ev=>{
   else if(c==='fr-notes'){const f=frById(el.dataset.f);if(f){f.notes=el.value;f.updated=now();changed();}}
   else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
 });
-document.addEventListener('submit',ev=>{if(ev.target.id==='editor'){ev.preventDefault();saveEditor();}});
+document.addEventListener('submit',ev=>{if(ev.target.id==='editor'){ev.preventDefault();saveEditor();}else if(ev.target.id==='authform'){ev.preventDefault();submitAuth(ev.target);}else if(ev.target.id==='pwform'){ev.preventDefault();changePassword(ev.target);}});
 document.addEventListener('keydown',ev=>{
   const mod=ev.ctrlKey||ev.metaKey,t=ev.target,typing=!!(t.closest&&t.closest('input,textarea,select,[contenteditable]'));
   if(ev.key==='Escape'){
@@ -1028,7 +1128,7 @@ window.addEventListener('resize',()=>requestAnimationFrame(()=>{
 }));
 window.marginaliaBack=()=>{if(pending){dismissImport();return true;}if(ed){closeEditor();return true;}if(route().p!=='home'){location.hash='#/';return true;}return false;};
 document.addEventListener('toggle',ev=>{const k=ev.target.dataset?.group;if(k){if(ev.target.open)opened.add(k);else opened.delete(k);}},true);
-applyTheme();render();restoreLink();
+applyTheme();render();restoreLink();if(sync.token)syncNow();
 const savedDraft=loadJSON('marginalia.draft');
 if(savedDraft){ed=savedDraft.data;edInitial=savedDraft.initial;$('#overlay').hidden=false;paintEditor();}
 else if(native&&!native.linked()&&!localStorage.getItem('welcomed')){localStorage.setItem('welcomed','1');location.hash='#/settings';}
