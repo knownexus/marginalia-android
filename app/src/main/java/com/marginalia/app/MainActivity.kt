@@ -68,8 +68,13 @@ class MainActivity : ComponentActivity() {
                 ready=true
                 queued.toList().also { queued.clear() }.forEach { report(it.first,it.second) }
             }
-            override fun shouldOverrideUrlLoading(view:WebView,request:WebResourceRequest):Boolean =
-                request.url.toString().substringBefore('#')!="file:///android_asset/index.html"
+            override fun shouldOverrideUrlLoading(view:WebView,request:WebResourceRequest):Boolean {
+                val target = request.url
+                if (target.toString().substringBefore('#') == "file:///android_asset/index.html") return false
+                // Links on entries open in the system browser; everything else stays blocked.
+                if (target.scheme == "https" || target.scheme == "http") runCatching { startActivity(Intent(Intent.ACTION_VIEW, target)) }
+                return true
+            }
         }
         web.addJavascriptInterface(MarginaliaBridge(this,repo),"MarginaliaAndroid")
         WindowCompat.setDecorFitsSystemWindows(window, false)

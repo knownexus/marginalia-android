@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const { SCHEMA: FEATURE_SCHEMA, FLAG_DEFAULTS, validFlag, resolveFlags } = require('./features');
+const { SCHEMA: FEATURE_SCHEMA, FLAG_DEFAULTS, validFlag, resolveFlags, featureOn } = require('./features');
 
 const PORT = Number(process.env.PORT) || 8080;
 const INVITE_CODE = process.env.INVITE_CODE || '';
@@ -66,7 +66,17 @@ async function init() {
       taken TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS library_versions_user ON library_versions(user_id, id DESC);
-    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS shares (
+      token TEXT PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      ref TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      with_notes BOOLEAN NOT NULL DEFAULT false,
+      created TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS shares_user ON shares(user_id);`);
   if (ADMIN_USERS.length) await pool.query('UPDATE users SET is_admin=true WHERE username = ANY($1)', [ADMIN_USERS]);
 }
 
@@ -166,6 +176,38 @@ async function writeLibrary(userId, expected, text, newEntries, force) {
     if (e.code === '23505') return null; // a concurrent first write won
     throw e;
   } finally { c.release(); }
+}
+
+
+/* ---------- read-only share links ---------- */
+const MAX_SHARES = 50;
+// What a share exposes. Notes only when the owner ticked "include notes". Never links, tombstones or other accounts' data.
+function shareView(lib, share) {
+  const keep = e => ({
+    id: e.id, type: e.type, title: e.title, creator: e.creator || '', status: e.status, stars: e.stars == null ? null : e.stars,
+    feeling: e.feeling || '', genres: e.genres || [], dates: (e.dates || []).map(r => ({ start: r.start || '', end: r.end || '' })),
+    cover: typeof e.cover === 'string' && e.cover.startsWith('data:image/') ? e.cover : '',
+    url: typeof e.url === 'string' && /^https?:\/\//i.test(e.url) ? e.url : '',
+    details: e.details || {}, notes: share.with_notes ? (e.notes || '') : ''
+  });
+  const entries = lib.entries || [];
+  const out = { kind: share.kind, title: share.title, withNotes: share.with_notes };
+  if (share.kind === 'franchise') {
+    const f = (lib.franchises || []).find(x => x.id === share.ref);
+    if (!f) return null;
+    const mine = entries.filter(e => e.franchiseId === f.id), ids = new Set(mine.map(e => e.id));
+    out.title = f.name; out.notes = share.with_notes ? (f.notes || '') : '';
+    out.timelines = (f.timelines || []).map(t => ({ name: t.name, items: (t.items || []).filter(i => ids.has(i.entryId)).map(i => ({ entryId: i.entryId, note: i.note || '' })) }));
+    out.entries = mine.map(keep);
+  } else if (share.kind === 'list') {
+    const l = (lib.lists || []).find(x => x.id === share.ref);
+    if (!l) return null;
+    out.title = l.name; out.notes = share.with_notes ? (l.notes || '') : '';
+    out.entries = entries.filter(e => (e.listIds || []).includes(l.id)).map(keep);
+  } else {
+    out.entries = entries.map(keep);
+  }
+  return out;
 }
 
 const tempPassword = () => crypto.randomBytes(9).toString('base64url');
@@ -308,6 +350,19 @@ async function api(req, res, url) {
     return send(res, 200, { username, token: await newSession(row.id, row.must_reset), mustChange: row.must_reset, isAdmin: row.is_admin, features: await resolveFlags(pool, row.id) }, cors);
   }
 
+
+  {
+    const sm = /^GET \/api\/shared\/([A-Za-z0-9_-]{10,40})$/.exec(route);
+    if (sm) {
+      const key = 'shared:' + clientIp(req); throttle(key, 300); fail(key);
+      const sh = (await pool.query('SELECT s.kind, s.ref, s.title, s.with_notes, l.data, l.updated FROM shares s JOIN libraries l ON l.user_id=s.user_id WHERE s.token=$1', [sm[1]])).rows[0];
+      const view = sh && shareView(JSON.parse(sh.data), sh);
+      if (!view) throw new HttpError(404, 'This link is no longer available');
+      view.updated = sh.updated;
+      return send(res, 200, view, Object.assign({ 'X-Robots-Tag': 'noindex, nofollow' }, cors));
+    }
+  }
+
   const user = await auth(req);
 
   if (user.restricted && route !== 'POST /api/logout' && route !== 'POST /api/password')
@@ -361,6 +416,31 @@ async function api(req, res, url) {
     const r = await pool.query('SELECT id, as_of, data FROM library_versions WHERE id=$1 AND user_id=$2', [m[1], user.id]);
     if (!r.rows[0]) throw new HttpError(404, 'Version not found');
     return send(res, 200, '{"id":' + r.rows[0].id + ',"asOf":' + JSON.stringify(r.rows[0].as_of) + ',"data":' + r.rows[0].data + '}', cors);
+  }
+
+  /* ----- share links (owner side) ----- */
+  if (route === 'GET /api/shares') {
+    const r = await pool.query('SELECT token, kind, ref, title, with_notes, created FROM shares WHERE user_id=$1 ORDER BY created DESC', [user.id]);
+    return send(res, 200, { shares: r.rows.map(s => ({ token: s.token, kind: s.kind, ref: s.ref, title: s.title, withNotes: s.with_notes, created: s.created })) }, cors);
+  }
+  if (route === 'POST /api/shares') {
+    if (!(await featureOn(pool, user.id, 'sharing'))) throw new HttpError(403, 'Sharing is not turned on for this account');
+    const kind = body.kind, ref = String(body.ref || '');
+    if (!['franchise', 'list', 'library'].includes(kind)) throw new HttpError(400, 'Unknown share type');
+    if ((await pool.query('SELECT count(*)::int AS n FROM shares WHERE user_id=$1', [user.id])).rows[0].n >= MAX_SHARES) throw new HttpError(400, 'Too many share links. Revoke some first.');
+    const row = (await pool.query('SELECT data FROM libraries WHERE user_id=$1', [user.id])).rows[0];
+    if (!row) throw new HttpError(400, 'Sync your library first');
+    const preview = shareView(JSON.parse(row.data), { kind, ref, title: 'My library', with_notes: false });
+    if (!preview) throw new HttpError(404, 'That item is not in your synced library. Sync, then try again.');
+    const token = crypto.randomBytes(16).toString('base64url');
+    await pool.query('INSERT INTO shares(token,user_id,kind,ref,title,with_notes) VALUES($1,$2,$3,$4,$5,$6)', [token, user.id, kind, kind === 'library' ? '' : ref, preview.title, !!body.notes]);
+    return send(res, 200, { token, title: preview.title }, cors);
+  }
+  m = /^\/api\/shares\/([A-Za-z0-9_-]{10,40})$/.exec(url.pathname);
+  if (m && req.method === 'DELETE') {
+    const r = await pool.query('DELETE FROM shares WHERE token=$1 AND user_id=$2', [m[1], user.id]);
+    if (!r.rowCount) throw new HttpError(404, 'No such link');
+    return send(res, 200, { ok: true }, cors);
   }
 
   /* ----- admin ----- */

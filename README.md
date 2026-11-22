@@ -28,7 +28,7 @@ To reset a password, run `npm ci` in `server/`, then `DATABASE_URL=<database URL
 
 Features can be switched on or off per account, so new functionality can reach chosen users first. A flag resolves in this order: the account's own setting, then the database default, then the default in the code. Everything that exists today defaults to on, so an account with no setting keeps it all. Signed-out use always follows the defaults in the page.
 
-Current flags: `franchises`, `stats`, `wrapped`, `file_link`, `shortcuts`, `drag_drop_import` (all on by default) and `version_history`, `offline_app`, `quick_add`, `sync_notices` (off by default, so they reach only the accounts you switch them on for). Manage them with `server/flags.js` (same `DATABASE_URL` as the password script):
+Current flags: `franchises`, `stats`, `wrapped`, `file_link`, `shortcuts`, `drag_drop_import` (all on by default) and `version_history`, `offline_app`, `quick_add`, `sync_notices`, `covers`, `progress`, `lists`, `stats_plus`, `import_trackers`, `sharing` (off by default, so they reach only the accounts you switch them on for). Manage them with `server/flags.js` (same `DATABASE_URL` as the password script):
 
 ```
 node flags.js list                       # every flag, its defaults and per-user settings
@@ -48,6 +48,28 @@ To ship something new to chosen users: add the flag in `index.html` (`FEATURES`,
 - **Installable offline app** (flag `offline_app`). Adds a web manifest and a service worker so Chrome, Edge and phones can install the site and open it offline. The page comes from the network when it can and from the cache when it can't. Sync calls are never cached. Turning the flag off removes both.
 - **Quick add** (flag `quick_add`). One line on Home, for example `Dune by Frank Herbert, book, finished, 4 stars, #scifi, in Dune saga, 2026-03-12`. Details after the title are matched by what they look like: a type (book, film, tv, game, play, escape, online), a status (planned, reading, finished…), a rating (`4 stars`, `4.5/5`, `4*`), `#genres`, `in Franchise`, `by Creator`, and `today`, `yesterday` or a date. Anything else becomes a note. `q` jumps to it.
 - **Sync notices** (flag `sync_notices`). When a sync brings in changes it says what changed, and when the same record was edited on two devices it says which version won (the newer edit). **Settings → Recent sync activity** keeps the last 25.
+
+### More features (all behind flags)
+
+- **Covers and links** (`covers`). Add a cover image and a web link to any entry in the editor. Covers are shrunk in the browser to about 10 KB and stored in the library, so about 600 fit before the library nears its 10 MB limit (the editor refuses past 8 MB). Links must be `http` or `https`; anything else is discarded. In the Android app a link opens in the system browser.
+- **Progress buttons** (`progress`). On Home and on an entry: **+10 pages**, **+25 pages**, **Next episode** (`S2E5` becomes `S2E6`, `12/24` becomes `13/24`), **+1 h**, **+5 h**, **Start** and **Finish**. Finishing stamps today's date.
+- **Lists** (`lists`). Named collections that cut across franchises ("to read this winter", "recommended by Sam"). Add entries from a list's page or an entry's page, filter the Library by list, and add `list: Name` to a quick-add line. Two devices that create a list with the same name offline are merged into one.
+- **More stats** (`stats_plus`). Finished per year by type with the change on the year before, average stars by genre and by type, finished per month over the last year, and **Year wrapped → Save as image** (a PNG in the browser and desktop app; not in the Android app).
+- **Import from other trackers** (`import_trackers`). Goodreads, StoryGraph and Letterboxd exports (CSV) and any CSV with a Title column, through the same review screen as Import and merge. Imported records are stamped old on purpose, so importing the same file twice adds nothing, your own edits win, and anything you deleted stays deleted.
+- **Share links** (`sharing`, enforced on the server). A read-only link to a franchise, a list or the whole library that anyone can open without an account. It shows your current library and stops working when you revoke it. Notes are shared only if you tick **include my notes**. Entry links, food-scale ratings, franchise and list membership, and deleted records are never included. Manage links in **Settings → Share links**.
+
+### Desktop app (Windows, macOS, Linux)
+
+`desktop/` is an Electron wrapper around the same page, so it works offline and signs in to the same account for sync. Links open in your browser, and the window only ever shows the app page. It keeps its library in the app's own storage, so it uses account sync and Export backup rather than the browser's linked file.
+
+```
+cd desktop
+npm install
+npm start          # run it
+npm run dist       # build an installer for the current OS (dmg, nsis or AppImage/deb)
+```
+
+The **Desktop app** workflow builds all three on GitHub (run it from the Actions tab). Installers aren't code-signed, so Windows SmartScreen and macOS Gatekeeper will ask you to confirm the first launch.
 
 ### Use it on desktop
 

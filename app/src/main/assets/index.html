@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-2CM09ws5y8fxCtmv5rDlqspnXMzbln9JFs5UlsAPtaY='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-U9vEczXo1e/bCZJGxWls+l6oIYRYf9+GeJG+tIkz7Uw='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Marginalia</title>
@@ -126,6 +127,14 @@ kbd{font:inherit;font-size:.85em;border:2px solid var(--border);border-bottom-wi
 @media (min-width:1700px){.wrap{max-width:1480px}}
 @media (hover:hover) and (pointer:fine){.tools input[type=search]{width:16rem}}
 
+/* covers, progress, tables */
+.cover{width:48px;height:72px;object-fit:cover;border-radius:6px;border:2px solid var(--border);flex:none;background:var(--bg)}
+.cover.big{width:96px;height:144px}
+.prog{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+table.stable{border-collapse:collapse;width:100%}
+.stable th,.stable td{border-bottom:1px solid var(--border);padding:.3rem .55rem;text-align:right}
+.stable thead th,.stable tbody th{text-align:left}
+
 /* bars */
 .bars{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
 .bars li{display:grid;grid-template-columns:minmax(6rem,11rem) 1fr 3.2ch;gap:.6rem;align-items:center}
@@ -179,6 +188,7 @@ html,#overlay{scroll-padding-block:12px}
       <a href="#/" data-nav="home">Home</a>
       <a href="#/library" data-nav="library">Library</a>
       <a href="#/franchises" data-nav="franchises">Franchises</a>
+      <a href="#/lists" data-nav="lists" hidden>Lists</a>
       <a href="#/stats" data-nav="stats">Stats</a>
       <a href="#/wrapped" data-nav="wrapped">Year wrapped</a>
       <a href="#/admin" data-nav="admin" hidden>Admin</a>
@@ -266,7 +276,8 @@ const foodOf=k=>FOODS.find(f=>f.k===k);
 /* ---------- state ---------- */
 const LS_DATA='marginalia.data.v1',LS_SET='marginalia.settings.v1';
 const native=window.MarginaliaAndroid;
-let db,storageStatus=native?'Saved on device':'Saved in this browser';
+const LOCAL_STATUS=native||window.MarginaliaDesktop?'Saved on device':'Saved in this browser';
+let db,storageStatus=LOCAL_STATUS;
 try { db=normalize(native?JSON.parse(native.load()):loadJSON(LS_DATA)||{}); }
 catch(err){document.body.textContent='The library could not be read. Reopen Marginalia to retry.';throw err;}
 // Desktop windows default to a smaller text size than phones; a size the user picks is kept.
@@ -282,20 +293,21 @@ const opened=new Set();
 function loadJSON(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
 function normalize(d){
   d=d||{};
-  d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'planned',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],created:now(),updated:now()},e,{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[]}));
+  d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'planned',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],cover:'',url:'',listIds:[],created:now(),updated:now()},e,{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[],listIds:e.listIds||[]}));
   d.franchises=(d.franchises||[]).map(f=>Object.assign({name:'',notes:'',created:now(),updated:now()},f,{timelines:f.timelines||[]}));
+  d.lists=(d.lists||[]).map(l=>Object.assign({name:'',notes:'',created:now(),updated:now()},l));
   d.deleted=d.deleted||{};
   d.version=1;
   return d;
 }
 function saveLocal(){
   try{const json=JSON.stringify(db);if(native){storageStatus=native.save(json);if(!storageStatus.startsWith('Saved'))throw Error(storageStatus);scheduleSync();}
-  else{localStorage.setItem(LS_DATA,json);if(fileHandle)syncFile(json);else storageStatus='Saved in this browser';scheduleSync();}return true;}
+  else{localStorage.setItem(LS_DATA,json);if(fileHandle)syncFile(json);else storageStatus=LOCAL_STATUS;scheduleSync();}return true;}
   catch(e){storageStatus='Save failed: '+e.message;toast(storageStatus);updateChrome();return false;}
 }
 function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}}
 /* ---------- desktop file link (File System Access API: Chrome, Edge and other Chromium browsers) ---------- */
-const canLink=!native&&typeof window.showSaveFilePicker==='function';
+const canLink=!native&&!window.MarginaliaDesktop&&typeof window.showSaveFilePicker==='function';   // the desktop app uses account sync instead
 const LS_FDIGEST='marginalia.file.digest';
 let fileHandle=null,fileState='',queued=null,busy=false;
 const hashStr=s=>{let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677);}
@@ -340,7 +352,7 @@ async function reconnectFile(){
 }
 async function unlinkFile(){
   try{await kv('readwrite',s=>s.delete('handle'));}catch(e){}
-  localStorage.removeItem(LS_FDIGEST);fileHandle=null;fileState='';queued=null;setStatus('Saved in this browser');render();toast('Library file unlinked');
+  localStorage.removeItem(LS_FDIGEST);fileHandle=null;fileState='';queued=null;setStatus(LOCAL_STATUS);render();toast('Library file unlinked');
 }
 async function restoreLink(){
   if(!canLink)return;
@@ -362,9 +374,11 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false;
    (per-user overrides > server default > these). Current functionality is on. To ship something new to
    chosen users only, add it here as false, gate the feature with feat('name'), and turn it on for them. */
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
-  version_history:false,offline_app:false,quick_add:false,sync_notices:false};
-const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices'};
-const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped'};
+  version_history:false,offline_app:false,quick_add:false,sync_notices:false,
+  covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false};
+const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
+  covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links'};
+const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
   const fChanged=!!f&&typeof f==='object'&&canon(f)!==canon(sync.features||{});
@@ -563,7 +577,7 @@ const Q_TYPES={book:'book',books:'book',film:'film',movie:'film',tv:'tv',show:'t
 const Q_STATUS={planned:'planned',plan:'planned',todo:'planned',want:'planned',wishlist:'planned',ongoing:'ongoing',reading:'ongoing',watching:'ongoing',playing:'ongoing',started:'ongoing',current:'ongoing','in progress':'ongoing',
   finished:'finished',done:'finished',read:'finished',watched:'finished',played:'finished',completed:'finished',paused:'paused',hold:'paused','on hold':'paused',dropped:'dropped',dnf:'dropped',abandoned:'dropped'};
 function parseQuick(text){
-  const out={title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],franchise:'',date:'',notes:[]};
+  const out={title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],franchise:'',list:'',date:'',notes:[]};
   const t=String(text||'').replace(/(^|\s)#([\w-]+)/g,(m,sp,g)=>{out.genres.push(g.toLowerCase());return sp;});
   const parts=t.split(',').map(x=>x.trim()).filter(Boolean);
   if(!parts.length)return null;
@@ -578,6 +592,7 @@ function parseQuick(text){
     else if(/^★{1,5}$/.test(seg))out.stars=seg.length;
     else if((m=/^by\s+(.+)$/i.exec(seg)))out.creator=m[1].trim();
     else if((m=/^(?:in|franchise:?)\s+(.+)$/i.exec(seg)))out.franchise=m[1].trim();
+    else if((m=/^(?:list|on list):?\s+(.+)$/i.exec(seg)))out.list=m[1].trim();
     else if(k==='today')out.date=today();
     else if(k==='yesterday'){const d=new Date();d.setDate(d.getDate()-1);out.date=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
     else if((m=/^(?:on\s+)?(\d{4}-\d{2}-\d{2})$/.exec(k)))out.date=m[1];
@@ -587,9 +602,9 @@ function parseQuick(text){
   return out;
 }
 function quickSummary(q){
-  if(!q)return 'Type a title, then add details separated by commas: a type (book, film, tv, game…), a status (finished, reading…), a rating (4 stars), #genres, in Franchise, a date (today, 2026-03-12). Press Enter to add.';
+  if(!q)return 'Type a title, then add details separated by commas: a type (book, film, tv, game…), a status (finished, reading…), a rating (4 stars), #genres, in Franchise, a date (today, 2026-03-12), list: Name. Press Enter to add.';
   const T=TYPES[q.type];
-  return [T.icon+' '+T.label,statusLabel(q.status),q.stars!=null?'★'+q.stars:'',q.creator&&'by '+q.creator,q.franchise&&'❦ '+q.franchise,q.genres.map(g=>'#'+g).join(' '),q.date&&fmtDate(q.date),q.notes.length&&'note: '+q.notes.join('; ')].filter(Boolean).join(' · ');
+  return [T.icon+' '+T.label,statusLabel(q.status),q.stars!=null?'★'+q.stars:'',q.creator&&'by '+q.creator,q.franchise&&'❦ '+q.franchise,q.list&&'☰ '+q.list,q.genres.map(g=>'#'+g).join(' '),q.date&&fmtDate(q.date),q.notes.length&&'note: '+q.notes.join('; ')].filter(Boolean).join(' · ');
 }
 const quickBar=()=>feat('quick_add')?`<div class="panel"><label for="quick">Quick add</label><input id="quick" type="text" placeholder="Dune by Frank Herbert, book, finished, 4 stars, #scifi" autocomplete="off" aria-describedby="quickprev"><p id="quickprev" class="muted small" style="margin:.5rem 0 0">${esc(quickSummary(null))}</p></div>`:'';
 function addQuick(){
@@ -598,7 +613,7 @@ function addQuick(){
   const t=now(),dates=[];
   if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});
   else if(q.status==='ongoing')dates.push({start:q.date||today(),end:'',note:''});
-  db.entries.push({id:uid(),type:q.type,title:q.title,creator:q.creator,franchiseId:q.franchise?ensureFranchise(q.franchise):'',genres:[...new Set(q.genres)],status:q.status,stars:q.stars,feeling:'',food:'',dates,details:{},notes:q.notes.join('\n'),links:[],created:t,updated:t});
+  db.entries.push({id:uid(),type:q.type,title:q.title,creator:q.creator,franchiseId:q.franchise?ensureFranchise(q.franchise):'',genres:[...new Set(q.genres)],status:q.status,stars:q.stars,feeling:'',food:'',dates,details:{},notes:q.notes.join('\n'),links:[],cover:'',url:'',listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],created:t,updated:t});
   if(!saveLocal()){db.entries.pop();return;}
   toast('Added “'+q.title+'”');render();const n=$('#quick');if(n)n.focus();
 }
@@ -638,6 +653,308 @@ function viewAdmin(){
       ${flagNames.map(f=>`<div class="facet"><span>${esc(FEATURE_LABELS[f]||f)} <span class="muted small">(${esc(f)}; default ${esc(val(d.flags.db[f])||codeLabel(f))})</span></span>${sel(val(u.overrides[f]),`data-change="adm-flag" data-u="${u.id}" data-f="${esc(f)}"`)}<span></span></div>`).join('')}</details></div>`).join('')}
   <div class="panel"><h2>Defaults for everyone</h2><p class="muted">Used by any account without its own setting. “Default” follows the code.</p>
     ${flagNames.map(f=>`<div class="facet"><span>${esc(FEATURE_LABELS[f]||f)} <span class="muted small">(${esc(f)}; code: ${esc(codeLabel(f))})</span></span>${sel(val(d.flags.db[f]),`data-change="adm-default" data-f="${esc(f)}"`)}<span></span></div>`).join('')}</div>`;
+}
+/* ---------- covers and links (flag: covers) ---------- */
+const normalizeUrl=u=>{u=String(u||'').trim();if(!u)return '';return safeUrl(/^[a-z][a-z0-9+.-]*:/i.test(u)?u:'https://'+u);};
+const safeUrl=u=>{try{const x=new URL(String(u||''));return /^https?:$/.test(x.protocol)?x.href:'';}catch(e){return '';}};
+async function makeCover(file){
+  if(!/^image\//.test(file.type))throw Error('Choose an image file');
+  const bmp=await createImageBitmap(file);
+  const scale=Math.min(1,220/bmp.width,330/bmp.height);
+  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(bmp.width*scale));c.height=Math.max(1,Math.round(bmp.height*scale));
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  const url=c.toDataURL('image/jpeg',0.72);
+  if(url.length>120000)throw Error('That image is too detailed. Try a smaller one.');
+  if(JSON.stringify(db).length+url.length>8000000)throw Error('The library is close to its size limit, so no more covers fit.');
+  return url;
+}
+const coverImg=(e,cls)=>feat('covers')&&e.cover?`<img class="cover${cls?' '+cls:''}" src="${esc(e.cover)}" alt="${cls?'Cover of '+esc(e.title):''}">`:'';
+function coverFields(){
+  if(!feat('covers'))return '';
+  return `<fieldset><legend>Cover and link</legend><div class="row2" style="margin-bottom:0">
+    <label>Link (web address)<input name="url" type="text" inputmode="url" autocapitalize="none" spellcheck="false" value="${esc(ed.url||'')}" placeholder="https://…"></label>
+    <div><label>Cover image<input type="file" id="coverfile" accept="image/*"></label>${ed.cover?`<div class="chips" style="margin-top:.5rem"><img class="cover" src="${esc(ed.cover)}" alt="Current cover"><button type="button" class="btn small" data-act="ed-nocover">Remove cover</button></div>`:''}
+    <p class="muted small" style="margin:.3rem 0 0">Images are shrunk to about 10 KB and stored in your library.</p></div></div></fieldset>`;
+}
+document.addEventListener('change',async ev=>{
+  if(ev.target.id!=='coverfile')return;
+  const f=ev.target.files[0];if(!f||!ed)return;
+  try{syncDraft();ed.cover=await makeCover(f);paintEditor();}catch(e){toast(e.message||'Could not use that image');}
+});
+
+/* ---------- progress buttons (flag: progress) ---------- */
+function nextEpisode(t){
+  t=String(t==null?'':t).trim();if(!t)return '1';
+  let m=/^(\d+)\s*\/\s*(\d+)$/.exec(t);if(m)return (Number(m[1])+1)+'/'+m[2];
+  m=/^(.*?)(\d+)(\D*)$/.exec(t);return m?m[1]+(Number(m[2])+1)+m[3]:t+' +1';
+}
+function progressBar(e){
+  const d=e.details||{};
+  if(!feat('progress')||e.type!=='book'||!(Number(d.pages)>0))return '';
+  const pct=Math.min(100,Math.round((Number(d.currentPage)||0)/Number(d.pages)*100));
+  return `<div class="bar" style="margin-top:.5rem" role="img" aria-label="${pct}% read"><i style="width:${pct}%"></i></div>`;
+}
+function progressButtons(e){
+  if(!feat('progress'))return '';
+  const b=(label,k,v)=>`<button class="btn small" data-act="prog" data-id="${e.id}" data-k="${k}" data-v="${v||''}">${label}</button>`,out=[];
+  if(['planned','paused','dropped'].includes(e.status))out.push(b('▶ Start','start'));
+  if(e.status==='ongoing'){
+    if(e.type==='book')out.push(b('+10 pages','pages',10),b('+25 pages','pages',25));
+    else if(e.type==='tv')out.push(b('Next episode','episode'));
+    else if(e.type==='game'||e.type==='online')out.push(b('+1 h','hours',1),b('+5 h','hours',5));
+    out.push(b('✓ Finish','finish'));
+  }
+  return out.length?`<div class="prog">${out.join('')}</div>`:'';
+}
+const withProgress=e=>feat('progress')?`<div>${cardHTML(e)}${progressBar(e)}${progressButtons(e)}</div>`:cardHTML(e);
+function bumpProgress(id,k,v){
+  const e=byId(id);if(!e)return;
+  const t=today(),d=e.details=e.details||{},open=()=>e.dates.find(r=>r.start&&!r.end);
+  let msg='';
+  if(k==='start'){e.status='ongoing';if(!open())e.dates.push({start:t,end:'',note:''});msg='Started “'+e.title+'”';}
+  else if(k==='pages'){const pages=Number(d.pages)||Infinity;d.currentPage=Math.min(pages,(Number(d.currentPage)||0)+Number(v));msg='Page '+d.currentPage+(Number(d.pages)?' of '+d.pages:'')+(d.currentPage>=pages?'. Tap Finish when you are done.':'');}
+  else if(k==='episode'){d.episodes=nextEpisode(d.episodes);msg='Now at '+d.episodes;}
+  else if(k==='hours'){d.hours=Math.round(((Number(d.hours)||0)+Number(v))*10)/10;msg=num(d.hours)+' hours played';}
+  else if(k==='finish'){e.status='finished';const r=open();if(r)r.end=t;else e.dates.push({start:'',end:t,note:''});if(e.type==='book'&&Number(d.pages)>0)d.currentPage=Number(d.pages);msg='Finished “'+e.title+'”';}
+  else return;
+  e.updated=now();changed();toast(msg);
+}
+
+/* ---------- lists (flag: lists) ---------- */
+const listById=id=>db.lists.find(l=>l.id===id);
+const inList=(e,id)=>(e.listIds||[]).includes(id);
+function ensureList(name){
+  const k=name.trim().toLowerCase();let l=db.lists.find(x=>x.name.trim().toLowerCase()===k);
+  if(!l){l={id:uid(),name:name.trim(),notes:'',created:now(),updated:now()};db.lists.push(l);}
+  return l.id;
+}
+function setEntryList(entryId,listId,on){
+  const e=byId(entryId);if(!e)return;
+  const had=inList(e,listId);if(had===on)return;
+  e.listIds=on?[...(e.listIds||[]),listId]:(e.listIds||[]).filter(i=>i!==listId);e.updated=now();
+}
+function viewLists(){
+  const ls=[...db.lists].sort(byName);
+  return `<h1>Lists</h1><p class="muted">Collections that cut across franchises: “to read this winter”, “recommended by Sam”, “comfort rewatches”.</p>
+  <div class="panel"><div style="display:flex;gap:.5rem;flex-wrap:wrap"><input id="list-new" type="text" placeholder="New list name" style="max-width:22rem" aria-label="New list name"><button class="btn primary" data-act="list-create">＋ Create list</button></div></div>
+  ${ls.length?`<div class="grid">${ls.map(l=>{const n=db.entries.filter(e=>inList(e,l.id)).length;return `<a class="card" href="#/list/${l.id}"><h3>☰ ${esc(l.name)}</h3><div class="muted">${n} entr${n===1?'y':'ies'}</div></a>`;}).join('')}</div>`:'<div class="panel empty"><p>No lists yet. Create one above, then add entries to it from its page or from an entry.</p></div>'}`;
+}
+function viewList(id){
+  const l=listById(id);
+  if(!l)return '<div class="panel empty"><h2>List not found</h2><p><a href="#/lists">Back to lists</a></p></div>';
+  const mine=db.entries.filter(e=>inList(e,id)).sort(byTitle),others=db.entries.filter(e=>!inList(e,id)).sort(byTitle);
+  return `<p><a href="#/lists">← Lists</a></p>
+  <h1 style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center">☰ ${esc(l.name)} <button class="btn small" data-act="list-rename" data-l="${l.id}">Rename</button> <button class="btn small danger" data-act="list-del" data-l="${l.id}">Delete</button></h1>
+  ${shareControls('list',l.id)}
+  <div class="panel"><h2>Notes</h2><textarea data-change="list-notes" data-l="${l.id}" placeholder="Why these belong together…">${esc(l.notes)}</textarea></div>
+  <h2>Entries (${mine.length})</h2>
+  ${mine.length?`<div class="grid">${mine.map(e=>`<div>${cardHTML(e)}<div class="prog"><button class="btn small" data-act="list-remove" data-l="${l.id}" data-id="${e.id}">Remove from list</button></div></div>`).join('')}</div>`:'<p class="muted">Nothing here yet.</p>'}
+  <div class="panel"><label>Add an entry<select id="list-add-${l.id}"><option value="">— choose an entry —</option>${others.map(e=>opt(e.id,TYPES[e.type].icon+' '+e.title,'')).join('')}</select></label>
+  <p style="margin-bottom:0"><button class="btn" data-act="list-add" data-l="${l.id}">＋ Add to list</button></p></div>`;
+}
+function entryLists(e){
+  if(!feat('lists'))return '';
+  const mine=db.lists.filter(l=>inList(e,l.id)),rest=db.lists.filter(l=>!inList(e,l.id)).sort(byName);
+  return `<div class="panel"><h2>Lists</h2>${mine.length?`<div class="chips">${mine.sort(byName).map(l=>`<span class="chip"><a href="#/list/${l.id}">☰ ${esc(l.name)}</a> <button class="btn small ghost" style="min-height:1.6rem;padding:0 .4rem" data-act="entry-list-remove" data-l="${l.id}" data-id="${e.id}" aria-label="Remove from ${esc(l.name)}">✕</button></span>`).join('')}</div>`:'<p class="muted">Not on any list.</p>'}
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem"><select id="entry-list-add" aria-label="List to add to" style="max-width:20rem"><option value="">— add to a list —</option>${rest.map(l=>opt(l.id,l.name,'')).join('')}<option value="__new">＋ New list…</option></select><button class="btn" data-act="entry-list-add" data-id="${e.id}">Add</button></div></div>`;
+}
+
+/* ---------- more stats and wrapped as an image (flag: stats_plus) ---------- */
+function statsPlusHTML(){
+  const E=db.entries,box=(h,b)=>`<div class="panel"><h2>${h}</h2>${b}</div>`;
+  const by={};E.forEach(e=>e.dates.forEach(r=>{if(!r.end)return;const y=Number(r.end.slice(0,4));if(!y)return;(by[y]=by[y]||{})[e.type]=(by[y][e.type]||0)+1;}));
+  const ys=Object.keys(by).map(Number).sort((a,b)=>b-a),total=y=>Object.values(by[y]).reduce((a,b)=>a+b,0),types=TYPE_KEYS.filter(k=>ys.some(y=>by[y][k]));
+  const table=ys.length?`<div style="overflow-x:auto"><table class="stable"><thead><tr><th>Year</th>${types.map(k=>`<th title="${esc(TYPES[k].label)}">${TYPES[k].icon}</th>`).join('')}<th>Total</th><th>vs ${'previous'}</th></tr></thead><tbody>${ys.map(y=>{const diff=by[y-1]?total(y)-total(y-1):null;return `<tr><th>${y}</th>${types.map(k=>`<td>${by[y][k]||''}</td>`).join('')}<td><b>${total(y)}</b></td><td>${diff==null?'–':(diff>0?'+':'')+diff}</td></tr>`;}).join('')}</tbody></table></div>`:'<p class="muted">Add finish dates to your entries to see this.</p>';
+  const g=new Map();E.forEach(e=>{if(e.stars==null)return;e.genres.forEach(x=>{const a=g.get(x)||[0,0];a[0]+=e.stars;a[1]++;g.set(x,a);});});
+  const gr=[...g.entries()].filter(([,a])=>a[1]>=3).map(([k,a])=>[k,a[0]/a[1],a[1]]).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const genreBars=gr.length?`<ul class="bars">${gr.map(([k,v,n])=>`<li><span>${esc(k)} <span class="muted small">(${n})</span></span><span class="bar"><i style="width:${Math.round(v/5*100)}%"></i></span><span class="bn">${v.toFixed(1)}</span></li>`).join('')}</ul>`:'<p class="muted">Needs a genre with at least 3 rated entries.</p>';
+  const n=new Date(),months=[];for(let i=11;i>=0;i--){const d=new Date(n.getFullYear(),n.getMonth()-i,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
+  const pace=months.map(m=>[MONTHS[Number(m.slice(5))-1]+' '+m.slice(2,4),E.reduce((s,e)=>s+e.dates.filter(r=>r.end&&r.end.startsWith(m)).length,0)]);
+  const typeAvg=TYPE_KEYS.map(k=>{const r=E.filter(e=>e.type===k&&e.stars!=null);return r.length>=2?[TYPES[k].icon+' '+TYPES[k].label+' ('+r.length+')',r.reduce((s,e)=>s+e.stars,0)/r.length]:null;}).filter(Boolean);
+  const avgBars=typeAvg.length?`<ul class="bars">${typeAvg.map(([l,v])=>`<li><span>${l}</span><span class="bar"><i style="width:${Math.round(v/5*100)}%"></i></span><span class="bn">${v.toFixed(1)}</span></li>`).join('')}</ul>`:'';
+  return box('Finished per year, by type',table)+box('Average stars by genre',genreBars)+box('Pace: finished per month',bars(pace))+(avgBars?box('Average stars by type',avgBars):'');
+}
+function saveWrappedImage(y){
+  if(native){toast('Saving an image works in the browser version.');return;}
+  const logs=[];db.entries.forEach(e=>e.dates.forEach(r=>{if(runYear(r)===y)logs.push({e,r});}));
+  const ents=[...new Set(logs.map(l=>l.e))];if(!ents.length){toast('Nothing dated in '+y);return;}
+  const dark=document.documentElement.dataset.theme==='dark';
+  const C=dark?{bg:'#1a1320',panel:'#2a2033',text:'#f0e7dc',muted:'#c7b9cc',accent:'#e2b872',rose:'#eba7bb'}:{bg:'#f3ead8',panel:'#fbf6ea',text:'#2b2232',muted:'#58495f',accent:'#6f3f66',rose:'#a2415f'};
+  const W=1080,H=1350,cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');
+  const F=(sz,w)=>(w||400)+' '+sz+'px Verdana, "Trebuchet MS", sans-serif';
+  const fit=(t,max)=>{while(t.length>3&&x.measureText(t).width>max)t=t.slice(0,-2).trimEnd()+'…';return t;};
+  x.fillStyle=C.bg;x.fillRect(0,0,W,H);
+  x.fillStyle=C.panel;x.fillRect(40,40,W-80,H-80);x.strokeStyle=C.accent;x.lineWidth=4;x.strokeRect(40,40,W-80,H-80);
+  x.textAlign='center';x.fillStyle=C.rose;x.font=F(34,700);x.fillText('☾  Marginalia  ✦',W/2,120);
+  x.fillStyle=C.muted;x.font=F(40);x.fillText(y+' in review',W/2,190);
+  x.fillStyle=C.accent;x.font=F(180,700);x.fillText(String(logs.length),W/2,380);
+  x.fillStyle=C.text;x.font=F(36);x.fillText('things logged across '+ents.length+' entr'+(ents.length===1?'y':'ies'),W/2,440);
+  const counts=TYPE_KEYS.map(k=>[TYPES[k].label,ents.filter(e=>e.type===k).length]).filter(r=>r[1]).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  x.font=F(30);x.fillStyle=C.muted;x.fillText(counts.map(([l,c])=>l+' ×'+c).join('   ·   '),W/2,510);
+  const feelScore=e=>({love:2,like:1,meh:0,dislike:-1,hate:-2}[e.feeling]??-3);
+  const top=[...ents].filter(e=>e.stars>=4||e.feeling==='love').sort((a,b)=>(b.stars==null?-1:b.stars)-(a.stars==null?-1:a.stars)||feelScore(b)-feelScore(a)).slice(0,5);
+  x.textAlign='left';x.fillStyle=C.accent;x.font=F(34,700);x.fillText('★ Highlights',110,620);
+  x.font=F(34);x.fillStyle=C.text;
+  const shown=(top.length?top:ents.slice(0,5));
+  shown.forEach((e,i)=>{x.fillText(fit((e.stars!=null?e.stars+'★  ':'')+e.title,W-260),110,680+i*56);});
+  const yb=680+shown.length*56+60;
+  const months=Array(12).fill(0);logs.forEach(l=>{const d=runDate(l.r);if(d)months[Number(d.slice(5,7))-1]++;});
+  const bm=months.indexOf(Math.max(...months)),genres=topN(countBy(ents.flatMap(e=>e.genres),g=>g),3).map(r=>r[0]);
+  x.fillStyle=C.accent;x.font=F(34,700);x.fillText('Busiest month',110,yb);x.fillStyle=C.text;x.font=F(34);x.fillText(MONTHS[bm]+' ('+months[bm]+' logged)',110,yb+50);
+  if(genres.length){x.fillStyle=C.accent;x.font=F(34,700);x.fillText('Favourite genres',110,yb+130);x.fillStyle=C.text;x.font=F(34);x.fillText(fit(genres.join(', '),W-260),110,yb+180);}
+  cv.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='marginalia-wrapped-'+y+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);});
+}
+
+/* ---------- import from other trackers (flag: import_trackers) ---------- */
+const IMPORT_STAMP='2000-01-01T00:00:00.000Z';   // old on purpose: anything you already have or edited wins a re-import
+function parseCSV(text){
+  text=String(text).replace(/^﻿/,'');const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
+    else if(ch==='"')q=true;
+    else if(ch===','){row.push(cur);cur='';}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cur);cur='';if(row.length>1||row[0]!=='')rows.push(row);row=[];}
+    else cur+=ch;}
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  const head=(rows.shift()||[]).map(h=>h.trim());
+  return rows.map(r=>Object.fromEntries(head.map((h,i)=>[h,(r[i]||'').trim()])));
+}
+const isoDate=s=>{const m=/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/.exec(s||'');return m?m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'):'';};
+const halfStar=v=>{const n=Math.round(Number(v)*2)/2;return Number.isFinite(n)&&n>0&&n<=5?n:null;};
+const cleanText=s=>String(s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'').trim();
+function hash32(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
+const pick_=(r,...names)=>{for(const n of names){const k=Object.keys(r).find(x=>x.toLowerCase()===n);if(k&&r[k]!=='')return r[k];}return '';};
+function importEntry(o){
+  return {id:o.id,type:o.type,title:o.title,creator:o.creator||'',franchiseId:'',genres:[...new Set((o.genres||[]).map(g=>g.trim().toLowerCase()).filter(Boolean))],status:o.status||'finished',stars:o.stars==null?null:o.stars,feeling:'',food:'',
+    dates:o.dates||[],details:o.details||{},notes:o.notes||'',links:[],cover:'',url:'',listIds:[],created:now(),updated:IMPORT_STAMP};
+}
+function importRows(rows,fileName){
+  const H=new Set(Object.keys(rows[0]||{}).map(h=>h.toLowerCase())),out=[];
+  if(!rows.length)return {kind:'empty',entries:[]};
+  if(H.has('exclusive shelf')){
+    for(const r of rows){const title=r['Title'];if(!title)continue;
+      const shelf=(r['Exclusive Shelf']||'').toLowerCase(),status={read:'finished','currently-reading':'ongoing','to-read':'planned'}[shelf]||'finished',end=isoDate(r['Date Read']),pages=Number(r['Number of Pages']);
+      out.push(importEntry({id:'gr-'+(String(r['Book Id']||'').replace(/\D/g,'')||hash32(title+'|'+r['Author'])),type:'book',title,creator:r['Author'],status,stars:halfStar(r['My Rating']),
+        dates:status==='finished'&&end?[{start:'',end,note:''}]:status==='ongoing'&&isoDate(r['Date Added'])?[{start:isoDate(r['Date Added']),end:'',note:''}]:[],
+        details:pages>0?{pages}:{},genres:(r['Bookshelves']||'').split(',').filter(g=>!['read','to-read','currently-reading'].includes(g.trim().toLowerCase())),notes:cleanText(r['My Review'])}));}
+    return {kind:'Goodreads',entries:out};
+  }
+  if(H.has('read status')&&H.has('star rating')){
+    for(const r of rows){const title=r['Title'];if(!title)continue;
+      const end=isoDate(r['Last Date Read']),status={'read':'finished','currently-reading':'ongoing','to-read':'planned','paused':'paused','did-not-finish':'dropped'}[(r['Read Status']||'').toLowerCase()]||'finished';
+      out.push(importEntry({id:'sg-'+hash32(title+'|'+(r['Authors']||'')),type:'book',title,creator:r['Authors'],status,stars:halfStar(r['Star Rating']),dates:end&&status==='finished'?[{start:'',end,note:''}]:[],
+        genres:(r['Tags']||'').split(','),notes:cleanText(r['Review']),details:r['Format']?{format:['Paper','E-book','Audiobook','Comic / manga'].find(f=>f.toLowerCase().startsWith(String(r['Format']).toLowerCase().slice(0,4)))||''}:{}}));}
+    out.forEach(e=>{if(!e.details.format)delete e.details.format;});
+    return {kind:'StoryGraph',entries:out};
+  }
+  if(H.has('letterboxd uri')){
+    const watchlist=/watchlist/i.test(fileName||''),acc=new Map();
+    for(const r of rows){const title=r['Name'];if(!title)continue;
+      const id='lb-'+(String(r['Letterboxd URI']||'').split('/').filter(Boolean).pop()||hash32(title+r['Year'])).replace(/[^A-Za-z0-9_-]/g,'');
+      const end=watchlist?'':isoDate(r['Watched Date']||r['Date']),e=importEntry({id,type:'film',title,status:watchlist?'planned':'finished',stars:halfStar(r['Rating']),dates:end?[{start:'',end,note:r['Rewatch']==='Yes'?'rewatch':''}]:[],
+        details:Number(r['Year'])>0?{year:Number(r['Year'])}:{},genres:(r['Tags']||'').split(','),notes:cleanText(r['Review'])}),ex=acc.get(id);
+      if(!ex){acc.set(id,e);continue;}
+      if(ex.stars==null)ex.stars=e.stars;
+      for(const d of e.dates)if(!ex.dates.some(x=>x.end===d.end&&x.start===d.start))ex.dates.push(d);
+      if(e.status==='finished')ex.status='finished';ex.genres=[...new Set([...ex.genres,...e.genres])];if(!ex.notes)ex.notes=e.notes;
+    }
+    return {kind:'Letterboxd',entries:[...acc.values()]};
+  }
+  if(H.has('title')){
+    const types=Object.assign({},Q_TYPES);TYPE_KEYS.forEach(k=>{types[k]=k;types[TYPES[k].label.toLowerCase()]=k;});
+    const stat=Object.assign({},Q_STATUS);STATUSES.forEach(s=>{stat[s[0]]=s[0];stat[s[1].toLowerCase()]=s[0];});
+    for(const r of rows){const title=pick_(r,'title');if(!title)continue;
+      const type=types[pick_(r,'type','kind','category').toLowerCase()]||'book',creator=pick_(r,'creator','author','authors','director','developer');
+      let rate=Number(pick_(r,'rating','stars','my rating'));if(rate>5&&rate<=10)rate/=2;
+      const end=isoDate(pick_(r,'finished','date finished','end','date','date read')),start=isoDate(pick_(r,'started','date started','start'));
+      const status=stat[pick_(r,'status','shelf').toLowerCase()]||(end?'finished':'planned');
+      out.push(importEntry({id:'csv-'+hash32(type+'|'+title.toLowerCase()+'|'+creator.toLowerCase()),type,title,creator,status,stars:halfStar(rate),dates:start||end?[{start,end,note:''}]:[],genres:pick_(r,'genres','genre','tags').split(/[,;]/),notes:pick_(r,'notes','review','comments')}));}
+    return {kind:'CSV',entries:out};
+  }
+  return {kind:'unknown',entries:[]};
+}
+function buildImport(files){
+  const byId=new Map(),kinds=new Set();
+  for(const f of files){
+    const r=importRows(parseCSV(f.text),f.name);
+    if(r.entries.length)kinds.add(r.kind);
+    for(const e of r.entries){const ex=byId.get(e.id);if(!ex)byId.set(e.id,e);else{if(ex.stars==null)ex.stars=e.stars;for(const d of e.dates)if(!ex.dates.some(x=>x.end===d.end&&x.start===d.start))ex.dates.push(d);if(e.status==='finished')ex.status='finished';}}
+  }
+  return {lib:{version:1,entries:[...byId.values()],franchises:[],lists:[],deleted:{}},kinds:[...kinds]};
+}
+document.addEventListener('change',async ev=>{
+  if(ev.target.id!=='trackerfile')return;
+  const files=[...ev.target.files];ev.target.value='';if(!files.length)return;
+  try{
+    const r=buildImport(await Promise.all(files.map(async f=>({name:f.name,text:await f.text()}))));
+    if(!r.lib.entries.length)throw Error('No entries found. Expected a Goodreads, StoryGraph or Letterboxd export, or a CSV with a Title column.');
+    toast('Read '+r.lib.entries.length+' entries from '+r.kinds.join(' and ')+'. Review them before they are added.');
+    preview(JSON.stringify(r.lib));
+  }catch(e){toast('Import failed: '+e.message);}
+});
+function importPanel(){
+  if(!feat('import_trackers'))return '';
+  return `<div class="panel"><h2>Import from another tracker</h2><p>Bring in a Goodreads, StoryGraph or Letterboxd export (CSV), or any CSV with a Title column. You review everything before it is added, and importing the same file twice never duplicates entries. Anything you have already edited wins.</p>
+  <label>Choose file(s)<input type="file" id="trackerfile" accept=".csv,text/csv" multiple></label>
+  <p class="muted small">Goodreads: My Books → Import and export → Export library. Letterboxd: Settings → Data → Export, then pick <code>ratings.csv</code>, <code>diary.csv</code>, <code>watched.csv</code> and <code>watchlist.csv</code> together. For a plain CSV the columns title, type, creator, status, rating, finished, genres and notes are understood.</p></div>`;
+}
+
+/* ---------- share links (flag: sharing; the server enforces it) ---------- */
+let shr={list:null,loading:false,note:''};
+const shareLink=t=>(/^https?:$/.test(location.protocol)?location.origin:API_BASE)+'/#/shared/'+t;
+async function loadShares(){
+  shr.loading=true;
+  try{const r=await api('GET','/api/shares');if(r.status===200)shr.list=r.body.shares;else shr.list=[];}catch(e){shr.list=[];}
+  shr.loading=false;if(route().p==='settings'&&!editingInApp())render();
+}
+async function copyText(t){try{await navigator.clipboard.writeText(t);return true;}catch(e){prompt('Copy this link:',t);return false;}}
+async function createShare(kind,ref,notes){
+  if(!sync.token){toast('Sign in to share.');return;}
+  await syncNow();
+  const r=await api('POST','/api/shares',{kind,ref,notes:!!notes}).catch(()=>null);
+  if(!r){toast('Cannot reach the server');return;}
+  if(r.status!==200){toast(r.body.error||'Could not create the link');return;}
+  const link=shareLink(r.body.token);shr.note='Link for “'+r.body.title+'”: '+link;shr.list=null;
+  const copied=await copyText(link);toast(copied?'Link copied. Anyone with it can view this, read-only.':'Link created.');
+  if(route().p==='settings')render();
+}
+function shareControls(kind,ref){
+  if(!sync.token||!feat('sharing'))return '';
+  return `<p class="chips" style="align-items:center"><label style="font-weight:400"><input type="checkbox" id="shn-${esc(ref)}" style="width:auto;min-height:0"> include my notes</label><button class="btn small" data-act="share-create" data-kind="${kind}" data-ref="${esc(ref)}">Create read-only link</button></p>`;
+}
+function sharePanel(){
+  if(!sync.token||sync.mustChange||!feat('sharing'))return '';
+  if(shr.list===null&&!shr.loading)loadShares();
+  const rows=(shr.list||[]).map(s=>`<li><b>${esc(s.title)}</b> <span class="muted small">(${esc(s.kind)}${s.withNotes?', with notes':''}, ${esc(fmtDate(String(s.created).slice(0,10)))})</span> <button class="btn small" data-act="share-copy" data-t="${esc(s.token)}">Copy link</button> <button class="btn small danger" data-act="share-revoke" data-t="${esc(s.token)}">Revoke</button></li>`).join('');
+  return `<div class="panel"><h2>Share links</h2><p class="muted">Anyone with a link can view what it shows, read-only, without an account. Links show your current library and stop working when you revoke them. Franchise and list links are made from their own pages.</p>
+  <p class="chips" style="align-items:center"><label style="font-weight:400"><input type="checkbox" id="shn-library" style="width:auto;min-height:0"> include my notes</label><button class="btn" data-act="share-create" data-kind="library" data-ref="library">Share my whole library</button></p>
+  ${shr.note?`<p role="status" class="small" style="overflow-wrap:anywhere">${esc(shr.note)}</p>`:''}
+  ${rows?`<ul class="runs">${rows}</ul>`:(shr.loading?'<p class="muted">Loading…</p>':'<p class="muted">No share links yet.</p>')}</div>`;
+}
+let sv={token:'',data:null,err:'',loading:false};
+async function loadShared(token){
+  sv={token,data:null,err:'',loading:true};
+  try{const r=await fetch(API_BASE+'/api/shared/'+encodeURIComponent(token));const j=await r.json().catch(()=>({}));if(r.status!==200)throw Error(j.error||'This link is no longer available');sv.data=j;}
+  catch(e){sv.err=e instanceof TypeError?'Cannot reach the server.':e.message;}
+  sv.loading=false;if(route().p==='shared')render();
+}
+function sharedCard(e){
+  const T=TYPES[e.type]||TYPES.book,runs=(e.dates||[]).filter(r=>r.start||r.end).map(r=>(r.start?fmtDate(r.start):'?')+(r.end?' → '+fmtDate(r.end):'')).join(' · '),link=safeUrl(e.url);
+  return `<div class="card" style="cursor:default"><div class="card-top">${e.cover?`<img class="cover" src="${esc(e.cover)}" alt="">`:''}<span class="type" title="${esc(T.label)}">${T.icon}</span><h3>${esc(e.title)}</h3></div>
+  ${e.creator?`<div class="muted">${esc(e.creator)}</div>`:''}<div class="meta">${statusBadge(e.status)} ${ratingsInline({stars:e.stars,feeling:e.feeling})}</div>
+  ${runs?`<div class="meta muted">${esc(runs)}</div>`:''}${(e.genres||[]).length?`<div class="chips" style="margin-top:.4rem">${e.genres.map(g=>`<span class="chip genre">${esc(g)}</span>`).join('')}</div>`:''}
+  ${link?`<div class="meta"><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open link ↗</a></div>`:''}${e.notes?`<div class="notes" style="margin-top:.5rem">${esc(e.notes)}</div>`:''}</div>`;
+}
+function viewShared(token){
+  if(sv.token!==token)loadShared(token);
+  if(sv.loading||(!sv.data&&!sv.err))return '<h1>Shared with you</h1><p class="muted">Loading…</p>';
+  if(sv.err)return `<h1>Shared with you</h1><div class="panel empty"><p>${esc(sv.err)}</p><p><a href="#/">Go to my library</a></p></div>`;
+  const d=sv.data,ents=d.entries||[],byE=new Map(ents.map(e=>[e.id,e]));
+  const tl=(d.timelines||[]).filter(t=>t.items.length).map(t=>`<div class="panel"><h3>${esc(t.name)}</h3><ol class="tl">${t.items.map(i=>{const e=byE.get(i.entryId);return e?`<li>${(TYPES[e.type]||TYPES.book).icon} ${esc(e.title)}${i.note?` <span class="muted">${esc(i.note)}</span>`:''}</li>`:'';}).join('')}</ol></div>`).join('');
+  return `<p class="muted small">Read-only view of a shared ${esc(d.kind)}${d.updated?', updated '+esc(fmtDate(String(d.updated).slice(0,10))):''}. <a href="#/">Go to my library</a></p>
+  <h1>${esc(d.title)}</h1>${d.notes?`<div class="panel"><div class="notes">${esc(d.notes)}</div></div>`:''}
+  <h2>${ents.length} entr${ents.length===1?'y':'ies'}</h2>${ents.length?`<div class="grid">${ents.map(sharedCard).join('')}</div>`:'<div class="panel empty">Nothing here.</div>'}
+  ${tl?`<h2>Timelines</h2>${tl}`:''}`;
 }
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
@@ -691,7 +1008,7 @@ function renderNotes(t){
 function cardHTML(e){
   const T=TYPES[e.type]||TYPES.book,fr=frName(e),p=progressText(e),d=latestRun(e);
   return `<a class="card" href="#/entry/${e.id}">
-    <div class="card-top"><span class="type" title="${esc(T.label)}">${T.icon}</span><h3>${esc(e.title)}</h3></div>
+    <div class="card-top">${coverImg(e)}<span class="type" title="${esc(T.label)}">${T.icon}</span><h3>${esc(e.title)}</h3></div>
     ${e.creator?`<div class="muted">${esc(e.creator)}</div>`:''}
     <div class="meta">${statusBadge(e.status)} ${ratingsInline(e)}</div>
     ${(fr||p||d)?`<div class="meta muted">${fr?`❦ ${esc(fr)}`:''} ${p?`· ${esc(p)}`:''} ${d?`· ${fmtDate(d)}`:''}</div>`:''}
@@ -711,7 +1028,7 @@ let lastKey='';
 function render(){
   const r=route();
   if((GATED_ROUTES[r.p]&&!feat(GATED_ROUTES[r.p]))||(r.p==='admin'&&!sync.isAdmin)){location.replace('#/');return;}
-  document.querySelectorAll('nav.main a').forEach(a=>{if(a.dataset.nav===r.p||(r.p==='entry'&&a.dataset.nav==='library')||(r.p==='franchise'&&a.dataset.nav==='franchises'))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  document.querySelectorAll('nav.main a').forEach(a=>{if(a.dataset.nav===r.p||(r.p==='entry'&&a.dataset.nav==='library')||(r.p==='franchise'&&a.dataset.nav==='franchises')||(r.p==='list'&&a.dataset.nav==='lists'))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   let html='';
   switch(r.p){
     case 'home':html=viewHome();break;
@@ -723,6 +1040,9 @@ function render(){
     case 'wrapped':html=viewWrapped(r.a);break;
     case 'settings':html=viewSettings();break;
     case 'admin':html=viewAdmin();break;
+    case 'lists':html=viewLists();break;
+    case 'list':html=viewList(r.a);break;
+    case 'shared':html=viewShared(r.a);break;
     default:html='<div class="panel empty"><h2>Lost in the stacks</h2><p><a href="#/">Back home</a></p></div>';
   }
   $('#app').innerHTML=html;
@@ -753,14 +1073,14 @@ function viewHome(){
     ${feat('wrapped')?`<a class="stat" href="#/wrapped"><b>${finThisYear}</b>finished in ${yr}</a>`:`<div class="stat" style="cursor:default"><b>${finThisYear}</b>finished in ${yr}</div>`}
   </div>
   <h2>Right now</h2>
-  ${ongoing.length?`<div class="grid">${ongoing.map(cardHTML).join('')}</div>`:'<p class="muted">Nothing marked as in progress.</p>'}
+  ${ongoing.length?`<div class="grid">${ongoing.map(withProgress).join('')}</div>`:'<p class="muted">Nothing marked as in progress.</p>'}
   <div class="divider">✦ ✦ ✦</div>
   <h2>Recently logged</h2><div class="grid">${recent.map(cardHTML).join('')}</div>
-  ${planned.length?`<div class="divider">☾</div><h2>On the to-do shelf</h2><div class="grid">${planned.map(cardHTML).join('')}</div>`:''}`;
+  ${planned.length?`<div class="divider">☾</div><h2>On the to-do shelf</h2><div class="grid">${planned.map(withProgress).join('')}</div>`:''}`;
 }
 function matches(e,f){
   const years=entryYears(e);
-  const vals={genre:e.genres,year:years.map(String),type:[e.type],status:[e.status],franchise:[e.franchiseId],stars:e.stars==null?[]:[String(e.stars)],feeling:[e.feeling],food:[e.food]};
+  const vals={genre:e.genres,year:years.map(String),type:[e.type],status:[e.status],franchise:[e.franchiseId],stars:e.stars==null?[]:[String(e.stars)],feeling:[e.feeling],food:[e.food],list:e.listIds||[]};
   for(const [k,values] of Object.entries(vals)){
     if((f.exclude[k]||[]).some(x=>values.includes(x)))return false;
     const inc=f.include[k]||[];
@@ -795,6 +1115,7 @@ function viewLibrary(){
   const genres=[...new Set(db.entries.flatMap(e=>e.genres))].sort();
   const years=allYears();
   const facets={type:['Type',TYPE_KEYS.map(k=>[k,TYPES[k].label])],status:['Status',STATUSES],franchise:['Franchise',frs.map(x=>[x.id,x.name])],genre:['Genre',genres.map(x=>[x,x])],feeling:['Feeling',FEELINGS.map(x=>[x.k,x.label])],food:['Food scale',FOODS.map(x=>[x.k,x.label])],stars:['Stars',STAR_STEPS.map(x=>[String(x),x+' ★'])],year:['Year',years.map(x=>[String(x),x])]};
+  if(feat('lists')&&db.lists.length)facets.list=['List',[...db.lists].sort(byName).map(l=>[l.id,l.name])];
   const chips=[];
   const groups=Object.entries(facets).map(([k,[label,opts]])=>{
     const rows=opts.map(([v,name])=>{
@@ -831,9 +1152,9 @@ function viewEntry(id){
   return `<p><a href="#/library">← Library</a></p>
   <div class="entry-layout"><div>
   <div class="panel">
-    <div class="card-top"><span class="type" style="font-size:2rem">${T.icon}</span><div><h1 style="margin:0">${esc(e.title)}</h1>
+    <div class="card-top">${coverImg(e,'big')}<span class="type" style="font-size:2rem">${T.icon}</span><div><h1 style="margin:0">${esc(e.title)}</h1>
     <div class="muted">${esc(T.label)}${e.creator?` · ${esc(T.creator)}: ${esc(e.creator)}`:''}</div></div></div>
-    <div class="meta" style="margin:.7rem 0">${statusBadge(e.status)} ${fr?(feat('franchises')?`<a href="#/franchise/${fr.id}">❦ ${esc(fr.name)}</a>`:`<span>❦ ${esc(fr.name)}</span>`):''} ${progressText(e)?`<span class="muted">· ${esc(progressText(e))}</span>`:''}</div>
+    <div class="meta" style="margin:.7rem 0">${statusBadge(e.status)} ${fr?(feat('franchises')?`<a href="#/franchise/${fr.id}">❦ ${esc(fr.name)}</a>`:`<span>❦ ${esc(fr.name)}</span>`):''} ${progressText(e)?`<span class="muted">· ${esc(progressText(e))}</span>`:''} ${feat('covers')&&safeUrl(e.url)?`<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">Open link ↗</a>`:''}</div>
     ${e.genres.length?`<div class="chips">${e.genres.map(g=>`<span class="chip genre">${esc(g)}</span>`).join('')}</div>`:''}
     <div class="rate-grid" style="margin-top:.9rem">
       <div class="rate-box"><small>Stars</small>${e.stars!=null?starsHTML(e.stars)+` ${e.stars}/5`:'<span class="muted">not rated</span>'}</div>
@@ -842,6 +1163,8 @@ function viewEntry(id){
     </div>
     <p style="margin-top:1rem"><button class="btn" data-act="edit" data-id="${e.id}">✎ Edit</button> <button class="btn danger" data-act="delete" data-id="${e.id}">Delete</button></p>
   </div>
+  ${feat('progress')&&(progressButtons(e)||progressBar(e))?`<div class="panel"><h2>Progress</h2>${progressText(e)?`<p style="margin:0">${esc(progressText(e))}</p>`:''}${progressBar(e)}${progressButtons(e)}</div>`:''}
+  ${entryLists(e)}
   ${runs.length?`<div class="panel"><h2>Dates</h2><ul class="runs">${runs.map((r,i)=>`<li><b>${runs.length>1?`Run ${i+1}: `:''}</b>${r.start?fmtDate(r.start):'?'}${r.end?` → ${fmtDate(r.end)}`:(r.start?' → …':'')}${r.note?` <span class="muted">— ${esc(r.note)}</span>`:''}</li>`).join('')}</ul></div>`:''}
   ${fieldRows?`<div class="panel"><h2>Details</h2><dl class="kv">${fieldRows}</dl></div>`:''}
   </div><div>
@@ -878,6 +1201,7 @@ function viewFranchise(id){
   }).join('');
   return `<p><a href="#/franchises">← Franchises</a></p>
   <h1 style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center">${esc(f.name)} <button class="btn small" data-act="fr-rename" data-f="${f.id}">Rename</button> <button class="btn small danger" data-act="fr-del" data-f="${f.id}">Delete franchise</button></h1>
+  ${shareControls('franchise',f.id)}
   <div class="panel"><h2>Notes</h2>
     <textarea data-change="fr-notes" data-f="${f.id}" placeholder="Lore, reading order thoughts, favourite characters… Use [[Entry title]] to link to an entry.">${esc(f.notes)}</textarea>
     ${f.notes?`<details style="margin-top:.6rem"><summary>Preview with links</summary><div class="notes">${renderNotes(f.notes)}</div></details>`:''}</div>
@@ -927,6 +1251,7 @@ function viewStats(){
     ${box('Food scale',bars(foods))}${box('Average stars by type',avgType?`<ul>${avgType}</ul>`:'<p class="muted">No ratings yet.</p>')}
     ${genres.length?box('Top genres',bars(genres)):''}${frs.length?box('Biggest franchises',bars(frs)):''}
     ${years.length?box('Entries by year',bars(years)):''}
+    ${feat('stats_plus')?statsPlusHTML():''}
   </div>`;
 }
 function viewWrapped(arg){
@@ -954,7 +1279,7 @@ function viewWrapped(arg){
   const steaks=ents.filter(e=>e.food==='steak'),cods=ents.filter(e=>e.food==='codliver'),crackers=ents.filter(e=>e.food==='cracker'||e.feeling==='hate');
   const sorted=[...logs].sort((a,b)=>runDate(a.r).localeCompare(runDate(b.r)));
   const card=(h,body)=>`<div class="wrap-card"><h3>${h}</h3>${body}</div>`;
-  return `<h1>Year wrapped</h1>${picker}
+  return `<h1>Year wrapped</h1>${picker}${feat('stats_plus')?`<p><button class="btn" data-act="wrapped-image" data-y="${y}">Save as image</button></p>`:''}
   <div class="wrap-hero"><div class="muted">${y} in review</div><div class="big">${logs.length}</div><div>things logged across ${ents.length} entr${ents.length===1?'y':'ies'}${repeats?` (${repeats} rewatch/reread${repeats===1?'':'es'})`:''}</div></div>
   <div class="wrap-cards">
     ${card('✦ By type',bars(typeRows))}
@@ -976,16 +1301,18 @@ function viewWrapped(arg){
 function viewSettings(){
   return `<h1>Settings &amp; files</h1>
   ${accountPanel()}
-  ${historyPanel()}${noticesPanel()}
+  ${historyPanel()}${noticesPanel()}${sharePanel()}
   ${feat('offline_app')&&installEvt?'<div class="panel"><h2>Install</h2><p>Install Marginalia as an app on this device. It opens in its own window and keeps working offline.</p><div class="chips"><button class="btn" data-act="install">Install app</button></div></div>':''}
   <div class="panel"><h2>Library files</h2><p>${esc(storageStatus)}</p>
-  <p>Import all or selected records from another library. Link a JSON file to write a copy after each save.</p>
+  <p>Import all or selected records from another library.${window.MarginaliaDesktop?'':' Link a JSON file to write a copy after each save.'}</p>
   ${canLink&&feat('file_link')&&fileHandle?`<p>Linked file: <b>${esc(fileHandle.name)}</b></p>`:''}
-  ${!native&&!canLink&&feat('file_link')?'<p class="muted">This browser cannot keep a linked file. Your library is saved in this browser, so use Export backup regularly. Chrome and Edge can link a file.</p>':''}
+  ${window.MarginaliaDesktop?'<p class="muted">This app keeps your library on this computer. Sign in under Account &amp; sync to keep it in step with your other devices, and use Export backup for a copy.</p>':''}
+  ${!native&&!window.MarginaliaDesktop&&!canLink&&feat('file_link')?'<p class="muted">This browser cannot keep a linked file. Your library is saved in this browser, so use Export backup regularly. Chrome and Edge can link a file.</p>':''}
   <div class="chips">${native&&feat('file_link')?'<button class="btn" data-act="link">Link a new file</button><button class="btn" data-act="share">Share backup</button>':''}
   ${canLink&&feat('file_link')?`${fileState==='permission'?'<button class="btn primary" data-act="reconnect">Reconnect file</button>':''}<button class="btn" data-act="link">${fileHandle?'Link a different file':'Link a file'}</button>${fileHandle?'<button class="btn" data-act="unlink">Unlink</button>':''}`:''}
   <button class="btn" data-act="export">Export backup</button><button class="btn" data-act="import">Import and merge</button></div>
   ${native||!feat('drag_drop_import')?'':'<p class="muted small">You can also drop a backup .json file anywhere on this page to import it.</p>'}</div>
+  ${importPanel()}
   <div class="panel"><h2>Look &amp; readability</h2>
     <div class="row2">
       <label>Theme<select data-change="set" data-k="theme">${opt('auto','Match my device',settings.theme)}${opt('light','Light (parchment)',settings.theme)}${opt('dark','Dark (candlelit)',settings.theme)}</select></label>
@@ -1064,6 +1391,7 @@ function editorHTML(){
 
     <fieldset><legend>${T.icon} ${esc(T.label)} details</legend><div class="row2" style="margin-bottom:0">${T.fields.map(fld).join('')}</div></fieldset>
 
+    ${coverFields()}
     <label>Notes <span class="muted small">(write [[Another Title]] to link to another entry)</span><textarea name="notes">${esc(d.notes)}</textarea></label>
 
     <fieldset style="margin-top:1rem"><legend>Links to other entries</legend>
@@ -1078,6 +1406,7 @@ function syncDraft(){
   const f=$('#editor');if(!f||!ed)return;
   const g=n=>{const el=f.elements[n];return el?el.value:'';};
   ed.title=g('title');ed.creator=g('creator');ed.franchise=g('franchise');ed.genres=g('genres');ed.status=g('status');ed.notes=g('notes');
+  if(f.elements.url)ed.url=g('url').trim();
   ed.dates=ed.dates.map((r,i)=>({start:g('rs'+i),end:g('re'+i),note:g('rn'+i)}));
   ed.links=ed.links.map((l,i)=>({rel:g('lr'+i),to:g('lt'+i)}));
   for(const fl of TYPES[ed.type].fields){
@@ -1093,9 +1422,10 @@ function saveEditor(){
   const genres=[...new Set(d.genres.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean))];
   const keep=new Set(TYPES[d.type].fields.map(f=>f.k));
   const details={};Object.keys(d.details).forEach(k=>{if(keep.has(k))details[k]=d.details[k];});
-  const rec={id:d.id||uid(),type:d.type,title:d.title.trim(),creator:d.creator.trim(),franchiseId:fid,genres,status:d.status,
+  const prev=db.entries.find(e=>e.id===d.id)||{};
+  const rec=Object.assign({},prev,{id:d.id||uid(),type:d.type,title:d.title.trim(),creator:d.creator.trim(),franchiseId:fid,genres,status:d.status,
     stars:d.stars,feeling:d.feeling,food:d.food,dates:d.dates.filter(r=>r.start||r.end||r.note),details,notes:d.notes,
-    links:d.links.filter(l=>l.to),created:d.created||now(),updated:now()};
+    links:d.links.filter(l=>l.to),cover:d.cover||'',url:normalizeUrl(d.url),listIds:prev.listIds||[],created:d.created||now(),updated:now()});
   const i=db.entries.findIndex(e=>e.id===rec.id);
   if(i>=0)db.entries[i]=rec;else db.entries.push(rec);
   if(!saveLocal()){db=JSON.parse(before);return;}closeEditor(true);render();toast(storageStatus);
@@ -1118,9 +1448,10 @@ function parseLibrary(text){
   const str=v=>typeof v==='string';
   const stamp=v=>str(v)&&Number.isFinite(Date.parse(v));
   const list=(v,test)=>Array.isArray(v)&&v.every(test);
-  if(!obj(data)||data.version!==1||!Array.isArray(data.entries)||!Array.isArray(data.franchises)||!obj(data.deleted||{}))fail();
+  if(!obj(data)||data.version!==1||!Array.isArray(data.entries)||!Array.isArray(data.franchises)||!obj(data.deleted||{})||(data.lists!=null&&!Array.isArray(data.lists)))fail();
+  data.lists=data.lists||[];
   const seen=new Set();
-  for(const r of [...data.entries,...data.franchises]){
+  for(const r of [...data.entries,...data.franchises,...data.lists]){
     if(!obj(r)||!id(r.id)||seen.has(r.id)||!stamp(r.updated)||!stamp(r.created))fail();
     seen.add(r.id);r.updated=new Date(r.updated).toISOString();r.created=new Date(r.created).toISOString();
   }
@@ -1130,8 +1461,11 @@ function parseLibrary(text){
       !list(e.genres||[],str)||!list(e.links||[],l=>obj(l)&&id(l.to)&&Object.prototype.hasOwnProperty.call(REL,l.rel))||
       !list(e.dates||[],r=>obj(r)&&['start','end','note'].every(k=>r[k]==null||str(r[k])))||
       !obj(e.details||{})||!Object.values(e.details||{}).every(v=>str(v)||typeof v==='number')||
+      !list(e.listIds||[],id)||(e.url!=null&&!(str(e.url)&&(e.url===''||/^https?:\/\//i.test(e.url))&&e.url.length<=2000))||
+      (e.cover!=null&&!(str(e.cover)&&(e.cover===''||(e.cover.startsWith('data:image/')&&e.cover.length<=120000))))||
       (e.stars!=null&&!STAR_STEPS.includes(e.stars)))fail();
   }
+  for(const l of data.lists){if(!str(l.name)||(l.notes!=null&&!str(l.notes)))fail();}
   for(const f of data.franchises){
     if(!str(f.name)||(f.notes!=null&&!str(f.notes))||!list(f.timelines||[],t=>obj(t)&&id(t.id)&&str(t.name)&&list(t.items,i=>obj(i)&&id(i.id)&&id(i.entryId)&&(i.note==null||str(i.note)))))fail();
   }
@@ -1150,9 +1484,9 @@ function preview(text){
       const franchises=source.franchises.filter(f=>selected.has(f.id)||entries.some(e=>e.franchiseId===f.id&&!frById(f.id)));
       const deleted=Object.fromEntries(Object.entries(source.deleted).filter(([k])=>selected.has('del:'+k)));
       result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,deleted})));
-      const before=new Map([...db.entries,...db.franchises].map(r=>[r.id,JSON.stringify(r)]));
-      const after=[...result.entries,...result.franchises];const added=after.filter(r=>!before.has(r.id)).length;
-      const unchanged=after.filter(r=>before.get(r.id)===JSON.stringify(r)).length;
+      const before=new Map([...db.entries,...db.franchises,...db.lists].map(r=>[r.id,canon(r)]));
+      const after=[...result.entries,...result.franchises,...result.lists];const added=after.filter(r=>!before.has(r.id)).length;
+      const unchanged=after.filter(r=>before.get(r.id)===canon(r)).length;
       $('#counts').textContent=added+' added · '+(after.length-added-unchanged)+' updated · '+unchanged+' retained · '+(before.size+added-after.length)+' removed. Required franchises are included.';
       $('#applyImport').disabled=!selected.size;
     }
@@ -1164,12 +1498,13 @@ function preview(text){
   }catch(e){dismissImport();toast('Import failed: '+e.message);}
 }
 function mergeData(a,b){
-  const out={version:1,entries:[],franchises:[],deleted:{}};
+  const out={version:1,entries:[],franchises:[],lists:[],deleted:{}};
   const del={};
   for(const src of [a.deleted||{},b.deleted||{}])for(const k in src)if(!del[k]||src[k]>del[k])del[k]=src[k];
   const pick=(x,y)=>{const m=new Map();for(const r of [...x,...y]){const o=m.get(r.id);if(!o||(r.updated||'')>(o.updated||''))m.set(r.id,r);}
     return [...m.values()].filter(r=>!(del[r.id]&&del[r.id]>=(r.updated||'')));};
   out.entries=pick(a.entries||[],b.entries||[]);
+  let lsts=pick(a.lists||[],b.lists||[]).sort((p,q)=>(p.created||'').localeCompare(q.created||''));
   let frs=pick(a.franchises||[],b.franchises||[]).sort((p,q)=>(p.created||'').localeCompare(q.created||''));
   const seen=new Map(),remap={},keep=[];
   for(const f of frs){
@@ -1181,7 +1516,14 @@ function mergeData(a,b){
       kp.updated=now();del[f.id]=now();
     }else{seen.set(k,f);keep.push(f);}
   }
+  const lseen=new Map(),lremap={},lkeep=[];
+  for(const l of lsts){const k=(l.name||'').trim().toLowerCase();
+    if(lseen.has(k)){const kp=lseen.get(k);lremap[l.id]=kp.id;if(l.notes&&!(kp.notes||'').includes(l.notes))kp.notes=(kp.notes?kp.notes+'\n\n':'')+l.notes;kp.updated=now();del[l.id]=now();}
+    else{lseen.set(k,l);lkeep.push(l);}}
+  out.lists=lkeep;
   out.franchises=keep;out.deleted=del;
+  const lids=new Set(lkeep.map(l=>l.id));
+  out.entries.forEach(e=>{const next=[...new Set((e.listIds||[]).map(i=>lremap[i]||i).filter(i=>lids.has(i)))];if(next.join()!==(e.listIds||[]).join()){e.listIds=next;e.updated=now();}});
   const ids=new Set(keep.map(f=>f.id));
   out.entries.forEach(e=>{
     if(e.franchiseId&&remap[e.franchiseId]){e.franchiseId=remap[e.franchiseId];e.updated=now();}
@@ -1271,6 +1613,18 @@ document.addEventListener('click',ev=>{
     case 'adm-delete':(async()=>{const n=prompt('This deletes the account "'+el.dataset.name+'" and its library, versions and sign-ins, and cannot be undone.\n\nType the username to confirm:');
       if(n===null)return;if(n.trim().toLowerCase()!==el.dataset.name){toast('That did not match. Nothing was deleted.');return;}
       const r=await adminCall('DELETE','/api/admin/users/'+el.dataset.id,undefined,'Deleted "'+el.dataset.name+'".');if(r)loadAdmin();})();break;
+    case 'ed-nocover':syncDraft();ed.cover='';paintEditor();break;
+    case 'prog':bumpProgress(el.dataset.id,el.dataset.k,el.dataset.v);break;
+    case 'list-create':{const inp=$('#list-new'),n=inp&&inp.value.trim();if(!n){toast('Name the list first');break;}const id=ensureList(n);changed();location.hash='#/list/'+id;break;}
+    case 'list-rename':{const l=listById(el.dataset.l),n=l&&prompt('New name?',l.name);if(n&&n.trim()&&n.trim()!==l.name){if(db.lists.some(x=>x.id!==l.id&&x.name.toLowerCase()===n.trim().toLowerCase())){toast('A list with that name exists');break;}l.name=n.trim();l.updated=now();changed();}break;}
+    case 'list-del':{const l=listById(el.dataset.l);if(l&&confirm(`Delete the list “${l.name}”? Entries stay, they just leave the list.`)){db.entries.forEach(e=>{if(inList(e,l.id)){e.listIds=e.listIds.filter(i=>i!==l.id);e.updated=now();}});db.lists=db.lists.filter(x=>x.id!==l.id);db.deleted[l.id]=now();location.hash='#/lists';changed();}break;}
+    case 'list-add':{const sel=$('#list-add-'+el.dataset.l);if(!sel||!sel.value){toast('Choose an entry to add');break;}setEntryList(sel.value,el.dataset.l,true);changed();break;}
+    case 'list-remove':case 'entry-list-remove':setEntryList(el.dataset.id,el.dataset.l,false);changed();break;
+    case 'entry-list-add':{const sel=$('#entry-list-add');if(!sel||!sel.value){toast('Choose a list');break;}let lid=sel.value;if(lid==='__new'){const n=prompt('Name for the new list?');if(!n||!n.trim())break;lid=ensureList(n);}setEntryList(el.dataset.id,lid,true);changed();break;}
+    case 'wrapped-image':saveWrappedImage(Number(el.dataset.y));break;
+    case 'share-create':{const k=el.dataset.kind,ref=el.dataset.ref,box=$('#shn-'+ref);createShare(k,k==='library'?'':ref,box&&box.checked);break;}
+    case 'share-copy':copyText(shareLink(el.dataset.t)).then(ok=>{if(ok)toast('Link copied');});break;
+    case 'share-revoke':(async()=>{if(!confirm('Revoke this link? People who have it will no longer be able to view it.'))return;const r=await api('DELETE','/api/shares/'+encodeURIComponent(el.dataset.t)).catch(()=>null);if(!r||r.status!==200){toast('Could not revoke the link');return;}shr.list=null;shr.note='';toast('Link revoked');render();})();break;
     case 'reconnect':if(fileHandle)reconnectFile();break;
     case 'unlink':if(fileHandle&&confirm('Stop saving to the linked file? The file stays as it is.'))unlinkFile();break;
     case 'export':{if(native){native.action('export');break;}const blob=new Blob([JSON.stringify(db,null,1)],{type:'application/json'});const u=URL.createObjectURL(blob);const l=document.createElement('a');l.href=u;l.download='marginalia-backup-'+today()+'.json';l.click();setTimeout(()=>URL.revokeObjectURL(u),2000);break;}
@@ -1287,6 +1641,7 @@ document.addEventListener('change',ev=>{
     const enabled=el.value===''?null:el.value==='on';
     (async()=>{const r=c==='adm-flag'?await adminCall('PUT','/api/admin/users/'+el.dataset.u+'/features',{flag:el.dataset.f,enabled}):await adminCall('PUT','/api/admin/features/default',{flag:el.dataset.f,enabled});
       if(r){adm.note='Saved. Accounts pick this up at their next sync (about a minute).';if(sync.token)syncNow();loadAdmin();}})();}
+  else if(c==='list-notes'){const l=listById(el.dataset.l);if(l){l.notes=el.value;l.updated=now();changed();}}
   else if(c==='fr-notes'){const f=frById(el.dataset.f);if(f){f.notes=el.value;f.updated=now();changed();}}
   else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
 });

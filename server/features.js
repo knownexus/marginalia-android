@@ -16,7 +16,13 @@ const FLAG_DEFAULTS = {
   version_history: false, // Restore earlier versions of the library from the server
   offline_app: false,     // Installable web app that opens offline
   quick_add: false,       // One-line quick add on Home
-  sync_notices: false     // Say what a sync merged and when edits conflicted
+  sync_notices: false,    // Say what a sync merged and when edits conflicted
+  covers: false,          // Cover images and a link on each entry
+  progress: false,        // One-tap progress buttons (+10 pages, next episode, +1 h, finish)
+  lists: false,           // Named lists beyond franchises
+  stats_plus: false,      // Year-over-year, ratings by genre, pace chart, wrapped as an image
+  import_trackers: false, // Import Goodreads, StoryGraph and Letterboxd exports (and generic CSV)
+  sharing: false          // Read-only share links for a franchise, a list or the whole library
 };
 
 const SCHEMA = `

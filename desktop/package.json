@@ -1,0 +1,47 @@
+{
+  "name": "marginalia-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Marginalia for Windows, macOS and Linux: the same offline page as the Android app, in its own window",
+  "author": "Marginalia",
+  "main": "main.js",
+  "scripts": {
+    "prepare-page": "node scripts/copy-page.js",
+    "start": "npm run prepare-page && electron .",
+    "pack": "npm run prepare-page && electron-builder --dir",
+    "dist": "npm run prepare-page && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "app.marginalia.desktop",
+    "productName": "Marginalia",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "icon.png"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.lifestyle",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "maintainer": "Marginalia"
+    }
+  },
+  "repository": "github:knownexus/marginalia-android"
+}
