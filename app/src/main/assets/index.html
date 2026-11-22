@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-7uhk10HIBxBFR1rQy+IW/kJeYa/wIorYSLeRZ+FXpkI='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-eTJRgl5mpmUyljC1SdJrClz+ymc5BXCpDj7DCOrWpTk='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -830,7 +830,7 @@ function setRule(key,kind,val){db.tagRules=collapseRules([...(db.tagRules||[]),n
 async function fetchAo3(id){
   const r=await api('GET','/api/ao3?id='+encodeURIComponent(id));
   if(r.status===401){signedOut('Session expired. Sign in again.');throw Error('Signed out');}
-  if(r.status!==200)throw Error(r.body.error||'AO3 lookup failed ('+r.status+')');
+  if(r.status!==200){const x=Error(r.body.error||'AO3 lookup failed ('+r.status+')');x.status=r.status;x.retryAfter=Number(r.body.retryAfter)||0;throw x;}
   return r.body;
 }
 const AO3_GROUPS=[['fandoms','Fandom',true],['relationships','Relationships',true],['tags','Additional tags',true],['characters','Characters',false],['warnings','Warnings',false],['categories','Categories',false]];
@@ -957,6 +957,61 @@ async function addQuickAo3(id,rest){
   toast('Added “'+w.title+'”');render();
 }
 let ao3Busy=false;
+function ao3ApplyKnown(e,w){   // fills an entry from AO3 using only tags you already know; returns how many new tags were left out
+  const rows=ao3Rows(w,true),left=rows.filter(r=>r.g!=='characters'&&r.g!=='warnings'&&r.g!=='categories'&&r.state==='new').length,sel=ao3Selection(rows);
+  if(!e.title||ao3Placeholder(e.title))e.title=w.title;
+  if(!e.creator)e.creator=w.author;
+  if(!e.franchiseId&&sel.franchiseName)e.franchiseId=ensureFranchise(sel.franchiseName);
+  e.genres=[...new Set([...e.genres,...sel.tags])];
+  if(e.type==='book'){e.type='fanfic';delete e.details.format;}   // an AO3 story is fanfiction
+  e.details=Object.assign({},ao3Fields(w),e.details);
+  e.notes=withSummary(e.notes,w.summary);e.updated=now();
+  return left;
+}
+/* Background fill-in: while Marginalia is open and signed in, works through stories that still have a placeholder title
+   ("AO3 #123"), one every few seconds, using only tags you already know. It backs off when AO3 says to, and skips stories
+   AO3 can't show (deleted or login-only) for a week. */
+const AO3_AUTO_GAP=6000,AO3_SKIP_KEY='marginalia.ao3skip';
+let ao3NextAt=0,ao3Pending=false,ao3Stat={done:0,msg:'',painted:0};
+const ao3Skips=()=>{try{const m=JSON.parse(localStorage.getItem(AO3_SKIP_KEY)||'{}'),t=Date.now(),o={};for(const k in m)if(m[k]>t)o[k]=m[k];return o;}catch(e){return {};}};
+const ao3Skip=(id,days)=>{try{const m=ao3Skips();m[id]=Date.now()+days*864e5;localStorage.setItem(AO3_SKIP_KEY,JSON.stringify(m));}catch(e){}};
+const ao3Candidates=()=>{const sk=ao3Skips();return db.entries.filter(e=>ao3Placeholder(e.title)&&ao3IdOf(e.url)&&!sk[e.id]);};
+function ao3PaintStatus(){
+  const el=$('#ao3auto-status');if(!el)return;
+  const n=ao3Candidates().length,wait=Math.max(0,Math.ceil((ao3NextAt-Date.now())/1000));
+  const stories=k=>k+(k===1?' story':' stories');
+  const parts=!settings.ao3Auto?[n?stories(n)+' still '+(n===1?'has':'have')+' a placeholder title':'Nothing waiting']:[n?stories(n)+' waiting':'Nothing waiting',ao3Stat.done?ao3Stat.done+' filled in since you opened this page':'',ao3Stat.msg,n&&wait>20?'Next try in '+Math.ceil(wait/60)+' min':''];
+  el.textContent=parts.filter(Boolean).join('. ')+'.';
+}
+async function ao3Tick(){
+  if(ao3Pending||Date.now()<ao3NextAt||!settings.ao3Auto||!ao3On())return;
+  if(ed||ao3Busy||coverBusy||ao3dlg||!$('#overlay').hidden||navigator.onLine===false)return;
+  const e=ao3Candidates()[0];if(!e){ao3Stat.msg='';ao3PaintStatus();return;}
+  ao3Pending=true;const gen=profileGen,id=e.id;
+  try{
+    const w=await fetchAo3(ao3IdOf(e.url));
+    if(gen!==profileGen)return;
+    const cur=byId(id);
+    if(cur&&ao3Placeholder(cur.title)){
+      ao3ApplyKnown(cur,w);saveLocal();ao3Stat.done++;ao3Stat.msg='';
+      if(Date.now()-ao3Stat.painted>30000&&!editingInApp()&&!picked.size&&$('#overlay').hidden){ao3Stat.painted=Date.now();render();}
+    }
+    ao3NextAt=Date.now()+AO3_AUTO_GAP;
+  }catch(x){
+    if(x.status===404||x.status===403){ao3Skip(id,7);ao3Stat.msg='Skipped one story AO3 would not show';ao3NextAt=Date.now()+AO3_AUTO_GAP;}
+    else if(x.status===429){const s=Math.max(60,x.retryAfter||0);ao3NextAt=Date.now()+s*1000;ao3Stat.msg='AO3 asked for a pause';}
+    else if(x.status===502){ao3NextAt=Date.now()+10*60000;ao3Stat.msg='AO3 is not answering ('+x.message+')';}
+    else if(x.message==='Signed out'){ao3NextAt=Date.now()+60000;}
+    else{ao3NextAt=Date.now()+60000;ao3Stat.msg='Could not reach the server';}
+  }finally{ao3Pending=false;ao3PaintStatus();}
+}
+setInterval(()=>{ao3Tick().catch(()=>{});},1000);
+function ao3AutoPanel(){
+  if(!feat('ao3_fetch'))return '';
+  return `<div class="panel"><h2>Fill in AO3 stories automatically</h2><p class="muted" style="margin-top:0">Works through stories that still have a placeholder title (such as “AO3 #123”), about one every ${AO3_AUTO_GAP/1000} seconds, adding the title, author, word count, summary and fandom, and only the tags you already use. It runs only while Marginalia is open and you are signed in, pauses when AO3 asks it to slow down, and does nothing while you are editing.</p>
+  <label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" data-change="set" data-k="ao3Auto" ${settings.ao3Auto?'checked':''}> Fill them in automatically</label>
+  <p class="muted small" id="ao3auto-status" role="status">${esc(String(ao3Candidates().length)+' waiting.')}</p></div>`;
+}
 async function bulkAo3(){   // fills in the selected stories that have an AO3 link, using only tags you already know
   if(ao3Busy)return;
   const all=pickedEntries().filter(e=>ao3IdOf(e.url)),LIMIT=100,todo=all.slice(0,LIMIT);
@@ -967,15 +1022,7 @@ async function bulkAo3(){   // fills in the selected stories that have an AO3 li
       toast('Fetching from AO3… '+(n+1)+' of '+todo.length);
       const e=todo[n];let w;
       try{w=await fetchAo3(ao3IdOf(e.url));}catch(x){err=x.message;if(/slow down|limited|Signed out/i.test(x.message))break;continue;}
-      const rows=ao3Rows(w,true);skippedTags+=rows.filter(r=>r.g!=='characters'&&r.g!=='warnings'&&r.g!=='categories'&&r.state==='new').length;
-      const sel=ao3Selection(rows);
-      if(!e.title||ao3Placeholder(e.title))e.title=w.title;
-      if(!e.creator)e.creator=w.author;
-      if(!e.franchiseId&&sel.franchiseName)e.franchiseId=ensureFranchise(sel.franchiseName);
-      e.genres=[...new Set([...e.genres,...sel.tags])];
-      if(e.type==='book'){e.type='fanfic';delete e.details.format;}   // an AO3 story is fanfiction
-      e.details=Object.assign({},ao3Fields(w),e.details);
-      e.notes=withSummary(e.notes,w.summary);e.updated=now();ok++;
+      skippedTags+=ao3ApplyKnown(e,w);ok++;
     }
   }finally{ao3Busy=false;}
   if(ok)changed();
@@ -2387,6 +2434,7 @@ function viewSettings(){
   ${exportPanel()}
   ${importPanel()}
   ${fanficMovePanel()}
+  ${ao3AutoPanel()}
   ${tagRulesPanel()}
   <div class="panel"><h2>Look &amp; readability</h2>
     <div class="row2">
@@ -2793,7 +2841,7 @@ document.addEventListener('change',ev=>{
   const k=el.dataset.k,c=el.dataset.change;
   if(c==='facet'){const side=el.dataset.side,v=el.dataset.v,other=side==='include'?'exclude':'include';F[side][k]=(F[side][k]||[]).filter(x=>x!==v);if(el.checked){F[side][k].push(v);F[other][k]=(F[other][k]||[]).filter(x=>x!==v);}render();}
   else if(c==='filter'){F[k]=el.value;render();}
-  else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}if(k==='mixScale')render();}
+  else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}if(k==='mixScale')render();if(k==='ao3Auto'){ao3NextAt=0;ao3PaintStatus();}}
   else if(c==='mixcustom'){const f=el.dataset.f,q=el.dataset.q,cm=settings.customMix=settings.customMix||{name:'',axes:['',''],opts:{}};cm.axes=cm.axes||['',''];cm.opts=cm.opts||{};
     const v=el.value;if(f==='name')cm.name=v.slice(0,40);else if(f==='axis0')cm.axes[0]=v.slice(0,40);else if(f==='axis1')cm.axes[1]=v.slice(0,40);
     else if(MIX_KEYS.includes(q)){cm.opts[q]=cm.opts[q]||{emoji:'',label:'',hint:''};cm.opts[q][f]=v.slice(0,f==='emoji'?8:f==='label'?30:80);}
