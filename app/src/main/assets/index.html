@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uFQwXGLsnluK56rZfe5s77j0Ioa6m+A0Rm1e9KSwrW8='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-J9kYtDxJRW6Zpx1LebhLjfd2JNtaC7X5M1dhi80+Le0='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -135,6 +135,30 @@ table.stable{border-collapse:collapse;width:100%}
 .stable th,.stable td{border-bottom:1px solid var(--border);padding:.3rem .55rem;text-align:right}
 .stable thead th,.stable tbody th{text-align:left}
 
+/* library actions */
+.lcard{position:relative;cursor:pointer}
+.lcard:hover{border-color:var(--accent)}
+.lcard.picked{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.lcard h3{padding-right:1.8rem}
+.selbox{position:absolute;top:.7rem;right:.7rem;width:1.25rem;height:1.25rem;accent-color:var(--accent);cursor:pointer}
+.titlebtn{background:none;border:0;padding:0;margin:0;font:inherit;font-weight:700;color:var(--text);text-align:left;cursor:pointer;letter-spacing:inherit}
+.titlebtn:hover{color:var(--accent)}
+.qstars{display:inline-flex;align-items:center;gap:.05rem}
+.qstars button{background:none;border:0;padding:0 .08rem;font-size:1.3rem;line-height:1;cursor:pointer;color:var(--border)}
+.qstars button.on{color:var(--accent)}
+.qstars button.half{color:var(--accent);opacity:.55}
+.qstars button:hover{color:var(--rose)}
+.qlist{width:auto;max-width:100%;min-height:2rem;padding:.1rem .4rem;font-size:.85rem}
+#bulkwrap{position:sticky;bottom:.6rem;z-index:20}
+#bulkwrap:empty{display:none}
+.bulkbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+.bulkbar select{width:auto;min-height:2rem;padding:.1rem .4rem;font-size:.85rem}
+#preview{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--panel);border-left:3px double var(--accent);box-shadow:-10px 0 30px rgba(0,0,0,.4);padding:1rem 1.1rem 1.6rem;overflow:auto;z-index:40}
+#preview[hidden]{display:none}
+.pv-top{display:flex;justify-content:space-between;align-items:center;gap:1rem}
+@media (min-width:900px){#preview{width:min(440px,44vw)}body.pv-open .wrap{max-width:none;margin-left:0;margin-right:min(450px,45vw)}}
+@media (max-width:700px){#preview{top:auto;left:0;width:100%;height:80vh;border-left:0;border-top:3px double var(--accent);border-radius:var(--radius) var(--radius) 0 0}}
+
 /* bars */
 .bars{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
 .bars li{display:grid;grid-template-columns:minmax(6rem,11rem) 1fr 3.2ch;gap:.6rem;align-items:center}
@@ -198,6 +222,7 @@ html,#overlay{scroll-padding-block:12px}
 </header>
 <main class="wrap" id="app"></main>
 <div id="overlay" hidden></div>
+<aside id="preview" hidden aria-label="Book preview"></aside>
 <div id="toast" role="status" hidden></div>
 <input type="file" id="importfile" accept="application/json,.json" hidden>
 
@@ -379,9 +404,9 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false;
    chosen users only, add it here as false, gate the feature with feat('name'), and turn it on for them. */
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
   version_history:false,offline_app:false,quick_add:false,sync_notices:false,
-  covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false};
+  covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false};
 const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
-  covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links'};
+  covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
@@ -719,6 +744,7 @@ function bumpProgress(id,k,v){
   else if(k==='pages'){const pages=Number(d.pages)||Infinity;d.currentPage=Math.min(pages,(Number(d.currentPage)||0)+Number(v));msg='Page '+d.currentPage+(Number(d.pages)?' of '+d.pages:'')+(d.currentPage>=pages?'. Tap Finish when you are done.':'');}
   else if(k==='episode'){d.episodes=nextEpisode(d.episodes);msg='Now at '+d.episodes;}
   else if(k==='hours'){d.hours=Math.round(((Number(d.hours)||0)+Number(v))*10)/10;msg=num(d.hours)+' hours played';}
+  else if(k==='finish-old'){e.status='finished';if(e.type==='book'&&Number(d.pages)>0)d.currentPage=Number(d.pages);msg='Marked “'+e.title+'” as finished';}
   else if(k==='finish'){e.status='finished';const r=open();if(r)r.end=t;else e.dates.push({start:'',end:t,note:''});if(e.type==='book'&&Number(d.pages)>0)d.currentPage=Number(d.pages);msg='Finished “'+e.title+'”';}
   else return;
   e.updated=now();changed();toast(msg);
@@ -1031,6 +1057,113 @@ function viewShared(token){
   <h2>${ents.length} entr${ents.length===1?'y':'ies'}</h2>${ents.length?`<div class="grid">${ents.map(sharedCard).join('')}</div>`:'<div class="panel empty">Nothing here.</div>'}
   ${tl?`<h2>Timelines</h2>${tl}`:''}`;
 }
+/* ---------- library actions (flag: library_actions) ---------- */
+let picked=new Set(),previewId=null,libShown=[];const genreOpen=new Set();
+const LA=()=>feat('library_actions');
+function removeEntries(ids){
+  const t=now();
+  db.entries=db.entries.filter(x=>!ids.has(x.id));ids.forEach(id=>{db.deleted[id]=t;});
+  db.entries.forEach(x=>{const n=x.links.length;x.links=x.links.filter(l=>!ids.has(l.to));if(x.links.length!==n)x.updated=t;});
+  db.franchises.forEach(f=>{let c=false;f.timelines.forEach(tl=>{const n=tl.items.length;tl.items=tl.items.filter(i=>!ids.has(i.entryId));if(n!==tl.items.length)c=true;});if(c)f.updated=t;});
+}
+function setStars(id,v){const e=byId(id);if(!e)return;v=Number(v);e.stars=e.stars===v?null:v;e.updated=now();changed();}
+function quickStars(e){
+  const cur=e.stars==null?0:e.stars;
+  return `<span class="qstars" role="group" aria-label="Rating for ${esc(e.title)}">${[1,2,3,4,5].map(i=>`<button type="button" class="${cur>=i?'on':cur>=i-.5&&cur>0?'half':''}" data-act="qstar" data-id="${e.id}" data-v="${i}" aria-label="${i} star${i===1?'':'s'}" aria-pressed="${cur===i}">${cur>=i||(cur>=i-.5&&cur>0)?'★':'☆'}</button>`).join('')}${cur&&cur%1?`<span class="muted small">${cur}</span>`:''}</span>`;
+}
+const isOn=(k,v)=>(F.include[k]||[]).includes(v);
+const chipBtn=(k,v,label,cls)=>`<button type="button" class="chip ${cls||''}${isOn(k,v)?' sel':''}" data-act="chip-filter" data-k="${k}" data-v="${esc(v)}" aria-pressed="${isOn(k,v)}" title="Filter by this">${label}</button>`;
+function genreBtns(e){
+  const all=e.genres,open=genreOpen.has(e.id),shown=open?all:all.slice(0,3);
+  return shown.map(g=>chipBtn('genre',g,esc(g),'genre')).join('')+(all.length>3?`<button type="button" class="chip genre" data-act="more-genres" data-id="${e.id}" title="${open?'Show fewer':esc(all.slice(3).join(', '))}">${open?'show fewer':'+'+(all.length-3)}</button>`:'');
+}
+const genreSpans=e=>{const g=LA()?e.genres.slice(0,3):e.genres;return g.map(x=>`<span class="chip genre">${esc(x)}</span>`).join('')+(LA()&&e.genres.length>3?`<span class="chip genre" title="${esc(e.genres.slice(3).join(', '))}">+${e.genres.length-3}</span>`:'');};
+function quickList(e){
+  if(!feat('lists'))return '';
+  const rest=db.lists.filter(l=>!inList(e,l.id)).sort(byName);
+  return `<select class="qlist" data-change="q-list" data-id="${e.id}" aria-label="Add ${esc(e.title)} to a list"><option value="">☰ Add to list</option>${rest.map(l=>opt(l.id,l.name,'')).join('')}<option value="__new">＋ New list…</option></select>`;
+}
+function quickState(e){
+  const b=(l,k)=>`<button type="button" class="btn small" data-act="prog" data-id="${e.id}" data-k="${k}">${l}</button>`;
+  if(e.status==='planned')return b('▶ Start','start')+b('✓ Already finished','finish-old');
+  if(['paused','dropped'].includes(e.status))return b('▶ Start','start');
+  if(e.status==='ongoing')return b('✓ Finish','finish');
+  return '';
+}
+function libCard(e){
+  if(!LA())return cardHTML(e);
+  const T=TYPES[e.type]||TYPES.book,fr=e.franchiseId&&frById(e.franchiseId),p=progressText(e),d=latestRun(e);
+  return `<div class="card lcard${picked.has(e.id)?' picked':''}" data-act="preview" data-id="${e.id}">
+    <input type="checkbox" class="selbox" data-change="sel" data-id="${e.id}" ${picked.has(e.id)?'checked':''} aria-label="Select ${esc(e.title)}">
+    <div class="card-top">${coverImg(e)}<span class="type" title="${esc(T.label)}">${T.icon}</span><h3><button type="button" class="titlebtn" data-act="preview" data-id="${e.id}">${esc(e.title)}</button></h3></div>
+    ${e.creator?`<div class="muted">${esc(e.creator)}</div>`:''}
+    <div class="meta">${chipBtn('status',e.status,esc(statusLabel(e.status)),'')} ${fr&&feat('franchises')?chipBtn('franchise',fr.id,'❦ '+esc(fr.name),''):''}</div>
+    <div class="meta">${quickStars(e)}</div>
+    ${(p||d)?`<div class="meta muted">${p?esc(p):''} ${d?'· '+fmtDate(d):''}</div>`:''}
+    ${e.genres.length?`<div class="chips" style="margin-top:.3rem">${genreBtns(e)}</div>`:''}
+    <div class="prog">${quickState(e)}${quickList(e)}</div></div>`;
+}
+/* select many */
+function bulkBar(){
+  picked.forEach(id=>{if(!byId(id))picked.delete(id);});
+  const n=picked.size;if(!n)return '';
+  const shown=new Set(libShown),hidden=[...picked].filter(id=>!shown.has(id)).length;
+  return `<div class="panel bulkbar" role="region" aria-label="Selected books"><b>${n} selected</b>${hidden?` <span class="muted small">(${hidden} hidden by filters)</span>`:''}
+    <button type="button" class="btn small" data-act="sel-all">Select all ${libShown.length} shown</button><button type="button" class="btn small" data-act="sel-none">Clear</button>
+    <select data-change="bulk-status" aria-label="Set status for the selected"><option value="">Set status…</option>${STATUSES.map(s=>`<option value="${s[0]}">${esc(s[1])}</option>`).join('')}</select>
+    ${feat('lists')?`<select data-change="bulk-list" aria-label="Add the selected to a list"><option value="">Add to list…</option>${[...db.lists].sort(byName).map(l=>opt(l.id,l.name,'')).join('')}<option value="__new">＋ New list…</option></select>`:''}
+    <button type="button" class="btn small" data-act="bulk-genre" data-v="add">＋ Genre</button><button type="button" class="btn small" data-act="bulk-genre" data-v="remove">− Genre</button>
+    <button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
+}
+const updateBulkBar=()=>{const w=$('#bulkwrap');if(w)w.innerHTML=bulkBar();};
+const pickedEntries=()=>[...picked].map(byId).filter(Boolean);
+const plural=(n,w)=>n+' '+w+(n===1?'':'s');
+function bulkStatus(v){const t=now(),es=pickedEntries();es.forEach(e=>{e.status=v;e.updated=t;});toast('Set '+plural(es.length,'book')+' to '+statusLabel(v));changed();}
+function bulkList(v){
+  let lid=v;
+  if(lid==='__new'){const n=prompt('Name for the new list?');if(!n||!n.trim()){render();return;}lid=ensureList(n);}
+  const es=pickedEntries();es.forEach(e=>setEntryList(e.id,lid,true));toast('Added '+plural(es.length,'book')+' to “'+listById(lid).name+'”');changed();
+}
+function bulkGenre(mode){
+  const raw=prompt((mode==='add'?'Genre to add to ':'Genre to remove from ')+plural(picked.size,'book')+'? (comma-separate several)');
+  const gs=[...new Set((raw||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean))];if(!gs.length)return;
+  let n=0;const t=now();
+  pickedEntries().forEach(e=>{const before=e.genres.join('|');e.genres=mode==='add'?[...new Set([...e.genres,...gs])]:e.genres.filter(g=>!gs.includes(g));if(e.genres.join('|')!==before){e.updated=t;n++;}});
+  toast(n?(mode==='add'?'Added':'Removed')+' on '+plural(n,'book'):'Nothing changed');if(n)changed();
+}
+function bulkDelete(){
+  const ids=[...picked].filter(byId);if(!ids.length)return;
+  if(!confirm('Delete '+plural(ids.length,'book')+'? '+(sync.token&&feat('version_history')?'You can bring them back from Version history.':'This cannot be undone.')))return;
+  removeEntries(new Set(ids));picked.clear();toast('Deleted '+plural(ids.length,'book'));changed();
+}
+/* preview panel */
+function previewHTML(e){
+  const T=TYPES[e.type]||TYPES.book,fr=e.franchiseId&&frById(e.franchiseId),lists=feat('lists')?db.lists.filter(l=>inList(e,l.id)).sort(byName):[];
+  const rows=fieldsOf(T).filter(f=>e.details[f.k]!==undefined&&e.details[f.k]!=='').map(f=>`<dt>${esc(f.label)}</dt><dd>${esc(e.details[f.k])}</dd>`).join('');
+  const runs=[...e.dates].sort((a,b)=>runDate(a).localeCompare(runDate(b))).map(r=>(r.start?fmtDate(r.start):'?')+(r.end?' → '+fmtDate(r.end):'')).join(' · ');
+  const link=feat('covers')?safeUrl(e.url):'';
+  return `<div class="pv-top"><h2 style="margin:0;font-size:1.1rem">Preview</h2><button type="button" class="btn small" data-act="preview-close">Close ✕</button></div>
+  <div class="card-top" style="margin-top:.8rem">${coverImg(e,'big')}<span class="type" style="font-size:1.8rem">${T.icon}</span><div><h2 style="margin:0">${esc(e.title)}</h2><div class="muted">${esc(T.label)}${e.creator?` · ${esc(e.creator)}`:''}</div></div></div>
+  <div class="meta" style="margin:.7rem 0">${chipBtn('status',e.status,esc(statusLabel(e.status)),'')} ${fr&&feat('franchises')?chipBtn('franchise',fr.id,'❦ '+esc(fr.name),''):''} ${lists.map(l=>`<a class="chip" href="#/list/${l.id}" data-act="preview-close">☰ ${esc(l.name)}</a>`).join(' ')}</div>
+  <div class="meta">${quickStars(e)}</div>
+  ${progressText(e)?`<p class="muted" style="margin:.4rem 0">${esc(progressText(e))}</p>`:''}${progressBar(e)}
+  ${feat('progress')?progressButtons(e):`<div class="prog">${quickState(e)}</div>`}
+  ${quickList(e)?`<div class="prog">${quickList(e)}</div>`:''}
+  ${e.genres.length?`<div class="chips" style="margin-top:.8rem">${e.genres.map(g=>chipBtn('genre',g,esc(g),'genre')).join('')}</div>`:''}
+  ${runs?`<p class="muted small" style="margin:.8rem 0 0">${esc(runs)}</p>`:''}
+  ${rows?`<dl class="kv" style="margin-top:.8rem">${rows}</dl>`:''}
+  ${e.notes?`<h3 style="margin-top:1rem">Notes</h3><div class="notes">${renderNotes(e.notes)}</div>`:''}
+  <div class="chips" style="margin-top:1.2rem"><a class="btn" href="#/entry/${e.id}" data-act="preview-close">Open full page</a><button type="button" class="btn" data-act="edit" data-id="${e.id}">✎ Edit</button>${link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Link ↗</a>`:''}</div>`;
+}
+function paintPreview(){
+  const pv=$('#preview'),e=byId(previewId);
+  if(!e){closePreview();return;}
+  const a=document.activeElement,key=a&&pv.contains(a)&&a.dataset.act?[a.dataset.act,a.dataset.id,a.dataset.v,a.dataset.k]:null,sc=pv.scrollTop;
+  pv.innerHTML=previewHTML(e);pv.scrollTop=sc;pv.hidden=false;document.body.classList.add('pv-open');
+  if(key){const q=[...pv.querySelectorAll('[data-act]')].find(x=>x.dataset.act===key[0]&&x.dataset.id===key[1]&&x.dataset.v===key[2]&&x.dataset.k===key[3]);if(q)q.focus();}
+}
+function openPreview(id){previewId=id;paintPreview();setTimeout(()=>{const c=$('#preview [data-act=preview-close]');if(c)c.focus();},30);}
+function closePreview(){const id=previewId;previewId=null;const pv=$('#preview');pv.hidden=true;pv.innerHTML='';document.body.classList.remove('pv-open');if(id){const b=document.querySelector('.titlebtn[data-id="'+id+'"]');if(b)b.focus();}}
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
 
@@ -1087,7 +1220,7 @@ function cardHTML(e){
     ${e.creator?`<div class="muted">${esc(e.creator)}</div>`:''}
     <div class="meta">${statusBadge(e.status)} ${ratingsInline(e)}</div>
     ${(fr||p||d)?`<div class="meta muted">${fr?`❦ ${esc(fr)}`:''} ${p?`· ${esc(p)}`:''} ${d?`· ${fmtDate(d)}`:''}</div>`:''}
-    ${e.genres.length?`<div class="chips" style="margin-top:.4rem">${e.genres.map(g=>`<span class="chip genre">${esc(g)}</span>`).join('')}</div>`:''}
+    ${e.genres.length?`<div class="chips" style="margin-top:.4rem">${genreSpans(e)}</div>`:''}
   </a>`;
 }
 function bars(rows){
@@ -1123,6 +1256,7 @@ function render(){
   $('#app').innerHTML=html;
   const key=r.p+'/'+r.a;if(key!==lastKey){window.scrollTo(0,0);lastKey=key;}
   updateChrome();
+  if(previewId){if(r.p!=='library')closePreview();else paintPreview();}
 }
 
 /* ---------- views ---------- */
@@ -1185,7 +1319,7 @@ function filtered(){
 }
 function viewLibrary(){
   if(!db.entries.length)return emptyState();
-  const list=filtered();
+  const list=filtered();libShown=list.map(e=>e.id);
   const frs=[...db.franchises].sort(byName);
   const genres=[...new Set(db.entries.flatMap(e=>e.genres))].sort();
   const years=allYears();
@@ -1212,7 +1346,7 @@ function viewLibrary(){
     <label>Sort by<select data-change="filter" data-k="sort">${opt('recent','Most recent activity',F.sort)}${opt('added','Date added',F.sort)}${opt('title','Title A–Z',F.sort)}${opt('rating','Stars (high first)',F.sort)}</select></label>
   </div>
   </details><p>${list.length} of ${db.entries.length} shown</p><div class="chips">${chips.join('')}<button class="btn small" data-act="clear-filters">Clear all</button></div></div>
-  ${list.length?`<div class="grid">${list.map(cardHTML).join('')}</div>`:'<div class="panel empty">Nothing matches those filters.</div>'}`;
+  ${list.length?`<div class="grid">${list.map(libCard).join('')}</div><div id="bulkwrap">${bulkBar()}</div>`:'<div class="panel empty">Nothing matches those filters.</div>'}`;
 }
 function viewEntry(id){
   const e=byId(id);
@@ -1508,9 +1642,7 @@ function saveEditor(){
 }
 function deleteEntry(id){
   const e=byId(id);if(!e||!confirm(`Delete “${e.title}”? This can't be undone.`))return;
-  db.entries=db.entries.filter(x=>x.id!==id);db.deleted[id]=now();
-  db.entries.forEach(x=>{const n=x.links.length;x.links=x.links.filter(l=>l.to!==id);if(x.links.length!==n)x.updated=now();});
-  db.franchises.forEach(f=>{let c=false;f.timelines.forEach(t=>{const n=t.items.length;t.items=t.items.filter(i=>i.entryId!==id);if(n!==t.items.length)c=true;});if(c)f.updated=now();});
+  removeEntries(new Set([id]));
   location.hash='#/library';changed();toast('Deleted');
 }
 
@@ -1626,6 +1758,7 @@ function updateChrome(){
 
 /* ---------- events ---------- */
 document.addEventListener('click',ev=>{
+  if(/^(INPUT|SELECT|OPTION|TEXTAREA)$/.test(ev.target.tagName)&&!ev.target.dataset.act)return;
   const el=ev.target.closest('[data-act]');if(!el)return;
   const a=el.dataset.act,v=el.dataset.v,i=el.dataset.i!==undefined?Number(el.dataset.i):null;
   const fr=el.dataset.f&&frById(el.dataset.f);
@@ -1688,6 +1821,15 @@ document.addEventListener('click',ev=>{
     case 'adm-delete':(async()=>{const n=prompt('This deletes the account "'+el.dataset.name+'" and its library, versions and sign-ins, and cannot be undone.\n\nType the username to confirm:');
       if(n===null)return;if(n.trim().toLowerCase()!==el.dataset.name){toast('That did not match. Nothing was deleted.');return;}
       const r=await adminCall('DELETE','/api/admin/users/'+el.dataset.id,undefined,'Deleted "'+el.dataset.name+'".');if(r)loadAdmin();})();break;
+    case 'preview':openPreview(el.dataset.id);break;
+    case 'preview-close':closePreview();break;
+    case 'qstar':setStars(el.dataset.id,el.dataset.v);break;
+    case 'chip-filter':{const k=el.dataset.k,cur=F.include[k]||[];F.include[k]=cur.includes(v)?cur.filter(x=>x!==v):[...cur,v];F.exclude[k]=(F.exclude[k]||[]).filter(x=>x!==v);if(route().p!=='library')location.hash='#/library';render();break;}
+    case 'more-genres':if(genreOpen.has(el.dataset.id))genreOpen.delete(el.dataset.id);else genreOpen.add(el.dataset.id);render();break;
+    case 'sel-all':libShown.forEach(id=>picked.add(id));render();break;
+    case 'sel-none':picked.clear();render();break;
+    case 'bulk-genre':bulkGenre(v);break;
+    case 'bulk-delete':bulkDelete();break;
     case 'ed-nocover':syncDraft();ed.cover='';paintEditor();break;
     case 'prog':bumpProgress(el.dataset.id,el.dataset.k,el.dataset.v);break;
     case 'list-create':{const inp=$('#list-new'),n=inp&&inp.value.trim();if(!n){toast('Name the list first');break;}const id=ensureList(n);changed();location.hash='#/list/'+id;break;}
@@ -1716,6 +1858,10 @@ document.addEventListener('change',ev=>{
     const enabled=el.value===''?null:el.value==='on';
     (async()=>{const r=c==='adm-flag'?await adminCall('PUT','/api/admin/users/'+el.dataset.u+'/features',{flag:el.dataset.f,enabled}):await adminCall('PUT','/api/admin/features/default',{flag:el.dataset.f,enabled});
       if(r){adm.note='Saved. Accounts pick this up at their next sync (about a minute).';if(sync.token)syncNow();loadAdmin();}})();}
+  else if(c==='sel'){const id=el.dataset.id;if(el.checked)picked.add(id);else picked.delete(id);const card=el.closest('.lcard');if(card)card.classList.toggle('picked',el.checked);updateBulkBar();}
+  else if(c==='bulk-status'){if(el.value)bulkStatus(el.value);}
+  else if(c==='bulk-list'){if(el.value)bulkList(el.value);}
+  else if(c==='q-list'){let lid=el.value;if(!lid)return;if(lid==='__new'){const n=prompt('Name for the new list?');if(!n||!n.trim()){el.value='';return;}lid=ensureList(n);}setEntryList(el.dataset.id,lid,true);changed();}
   else if(c==='list-notes'){const l=listById(el.dataset.l);if(l){l.notes=el.value;l.updated=now();changed();}}
   else if(c==='fr-notes'){const f=frById(el.dataset.f);if(f){f.notes=el.value;f.updated=now();changed();}}
   else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
@@ -1726,7 +1872,7 @@ document.addEventListener('keydown',ev=>{
   if(ev.target.id==='quick'&&ev.key==='Enter'){ev.preventDefault();addQuick();return;}
   const mod=ev.ctrlKey||ev.metaKey,t=ev.target,typing=!!(t.closest&&t.closest('input,textarea,select,[contenteditable]'));
   if(ev.key==='Escape'){
-    if(pending)dismissImport();else if(ed)closeEditor();
+    if(pending)dismissImport();else if(ed)closeEditor();else if(previewId)closePreview();
     else if(t.id==='quick'){t.blur();}
     else if(t.id==='q'){if(t.value){t.value='';F.q='';render();}t.blur();}
     return;

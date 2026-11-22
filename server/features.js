@@ -22,7 +22,8 @@ const FLAG_DEFAULTS = {
   lists: false,           // Named lists beyond franchises
   stats_plus: false,      // Year-over-year, ratings by genre, pace chart, wrapped as an image
   import_trackers: false, // Import Goodreads, StoryGraph and Letterboxd exports (and generic CSV)
-  sharing: false          // Read-only share links for a franchise, a list or the whole library
+  sharing: false,         // Read-only share links for a franchise, a list or the whole library
+  library_actions: false  // Library page: quick stars and Start/Finish, tap-to-filter chips, multi-select, preview panel
 };
 
 const SCHEMA = `
