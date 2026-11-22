@@ -406,6 +406,26 @@ async function api(req, res, url) {
     return send(res, 200, { rev }, cors);
   }
 
+  /* ----- export everything (the parts the page does not already hold) ----- */
+  if (route === 'GET /api/export') {
+    const withVersions = url.searchParams.get('versions') === '1';
+    const acct = (await pool.query('SELECT username, created, is_admin FROM users WHERE id=$1', [user.id])).rows[0];
+    const shares = (await pool.query('SELECT token, kind, ref, title, with_notes, created FROM shares WHERE user_id=$1 ORDER BY created', [user.id])).rows;
+    let versions = [];
+    if (withVersions) {
+      const r = await pool.query('SELECT id, as_of, entries, franchises, data FROM library_versions WHERE user_id=$1 ORDER BY id DESC', [user.id]);
+      if (r.rows.reduce((n, v) => n + v.data.length, 0) > 60 * 1024 * 1024) throw new HttpError(413, 'Version history is too large to include. Export without it.');
+      versions = r.rows;
+    }
+    // Versions are embedded as stored text so their key order is preserved.
+    const body = '{"exportedAt":' + JSON.stringify(new Date().toISOString())
+      + ',"account":' + JSON.stringify({ username: acct.username, created: acct.created, admin: acct.is_admin })
+      + ',"features":' + JSON.stringify(await resolveFlags(pool, user.id))
+      + ',"shares":' + JSON.stringify(shares.map(s => ({ token: s.token, kind: s.kind, ref: s.ref, title: s.title, withNotes: s.with_notes, created: s.created })))
+      + ',"versions":[' + versions.map(v => '{"id":' + v.id + ',"asOf":' + JSON.stringify(v.as_of) + ',"entries":' + v.entries + ',"franchises":' + v.franchises + ',"data":' + v.data + '}').join(',') + ']}';
+    return send(res, 200, body, cors);
+  }
+
   /* ----- version history ----- */
   if (route === 'GET /api/versions') {
     const r = await pool.query('SELECT id, as_of, entries, franchises, length(data) AS bytes FROM library_versions WHERE user_id=$1 ORDER BY id DESC LIMIT $2', [user.id, MAX_VERSIONS]);

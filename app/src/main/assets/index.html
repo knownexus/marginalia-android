@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3UqUBODEWGlWaXVy9CIYy0HeDEl996fRne4khIy1pFg='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-6i6tpJkQo8XqUI6mZYF4ySaUMFVcK/Wj6Ml8Ao9XfdA='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -160,6 +160,9 @@ button.chip[data-act=chip-filter].sel{background:transparent;color:var(--accent)
 .pv-top{display:flex;justify-content:space-between;align-items:center;gap:1rem}
 @media (min-width:900px){#preview{width:min(440px,44vw)}body.pv-open .wrap{max-width:none;margin-left:0;margin-right:min(450px,45vw)}}
 @media (max-width:700px){#preview{top:auto;left:0;width:100%;height:80vh;border-left:0;border-top:3px double var(--accent);border-radius:var(--radius) var(--radius) 0 0}}
+
+#toast .toastbtn{margin-left:.7rem;background:transparent;border:2px solid currentColor;color:inherit;border-radius:999px;padding:0 .8rem;font:inherit;font-weight:700;cursor:pointer}
+#toast .toastbtn:hover{filter:brightness(1.15)}
 
 /* bars */
 .bars{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
@@ -410,10 +413,10 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false;
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
   version_history:false,offline_app:false,quick_add:false,sync_notices:false,
   covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false,
-  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false};
+  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false};
 const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
   covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions',
-  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder'};
+  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
@@ -1125,23 +1128,26 @@ function bulkBar(){
 const updateBulkBar=()=>{const w=$('#bulkwrap');if(w)w.innerHTML=bulkBar();};
 const pickedEntries=()=>[...picked].map(byId).filter(Boolean);
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
-function bulkStatus(v){const t=now(),es=pickedEntries();es.forEach(e=>{e.status=v;e.updated=t;});toast('Set '+plural(es.length,'book')+' to '+statusLabel(v));changed();}
+function bulkStatus(v){const snap=undoSnap(),t=now(),es=pickedEntries();es.forEach(e=>{e.status=v;e.updated=t;});changed();offerUndo('Set '+plural(es.length,'book')+' to '+statusLabel(v),snap);}
 function bulkList(v){
+  const snap=undoSnap();   // before a new list is created, so undo removes it too
   let lid=v;
   if(lid==='__new'){const n=prompt('Name for the new list?');if(!n||!n.trim()){render();return;}lid=ensureList(n);}
-  const es=pickedEntries();es.forEach(e=>setEntryList(e.id,lid,true));toast('Added '+plural(es.length,'book')+' to “'+listById(lid).name+'”');changed();
+  const es=pickedEntries();es.forEach(e=>setEntryList(e.id,lid,true));changed();offerUndo('Added '+plural(es.length,'book')+' to “'+listById(lid).name+'”',snap);
 }
 function bulkGenre(mode){
   const raw=prompt((mode==='add'?'Genre to add to ':'Genre to remove from ')+plural(picked.size,'book')+'? (comma-separate several)');
   const gs=[...new Set((raw||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean))];if(!gs.length)return;
-  let n=0;const t=now();
+  let n=0;const t=now(),snap=undoSnap();
   pickedEntries().forEach(e=>{const before=e.genres.join('|');e.genres=mode==='add'?[...new Set([...e.genres,...gs])]:e.genres.filter(g=>!gs.includes(g));if(e.genres.join('|')!==before){e.updated=t;n++;}});
-  toast(n?(mode==='add'?'Added':'Removed')+' on '+plural(n,'book'):'Nothing changed');if(n)changed();
+  if(!n){toast('Nothing changed');return;}
+  changed();offerUndo((mode==='add'?'Added':'Removed')+' genre on '+plural(n,'book'),snap);
 }
 function bulkDelete(){
   const ids=[...picked].filter(byId);if(!ids.length)return;
-  if(!confirm('Delete '+plural(ids.length,'book')+'? '+(sync.token&&feat('version_history')?'You can bring them back from Version history.':'This cannot be undone.')))return;
-  removeEntries(new Set(ids));picked.clear();toast('Deleted '+plural(ids.length,'book'));changed();
+  const snap=undoSnap();   // with undo on, only a very large delete asks first
+  if(!(snap&&ids.length<25)&&!confirm('Delete '+plural(ids.length,'book')+'? '+(snap?'You can undo this right afterwards.':sync.token&&feat('version_history')?'You can bring them back from Version history.':'This cannot be undone.')))return;
+  removeEntries(new Set(ids));picked.clear();changed();offerUndo('Deleted '+plural(ids.length,'book'),snap);
 }
 /* preview panel */
 function previewHTML(e){
@@ -1357,6 +1363,140 @@ function viewsStrip(){
   if(!feat('saved_views'))return '';
   const pins=db.views.filter(v=>v.pinned).sort(byName);if(!pins.length)return '';
   return `<h2>Views</h2><div class="chips" style="margin-bottom:1rem">${pins.map(v=>`<button type="button" class="chip" data-act="view-apply" data-id="${v.id}">${esc(v.name)} <span class="muted">(${viewCount(v)})</span></button>`).join('')}</div>`;
+}
+/* ---------- export everything (flag: export_all) ---------- */
+const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=CRC_T[(c^b[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
+function makeZip(files){   // stored (uncompressed) zip: plenty for text, and images are already compressed
+  const enc=new TextEncoder(),parts=[],central=[];let offset=0;
+  const d=new Date(),dosTime=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1),dosDate=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+  for(const f of files){
+    const name=enc.encode(f.name),crc=crc32(f.data),size=f.data.length;
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(6,0x0800,true);lh.setUint16(8,0,true);lh.setUint16(10,dosTime,true);lh.setUint16(12,dosDate,true);
+    lh.setUint32(14,crc,true);lh.setUint32(18,size,true);lh.setUint32(22,size,true);lh.setUint16(26,name.length,true);lh.setUint16(28,0,true);
+    parts.push(lh.buffer,name,f.data);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true);ch.setUint16(4,20,true);ch.setUint16(6,20,true);ch.setUint16(8,0x0800,true);ch.setUint16(10,0,true);ch.setUint16(12,dosTime,true);ch.setUint16(14,dosDate,true);
+    ch.setUint32(16,crc,true);ch.setUint32(20,size,true);ch.setUint32(24,size,true);ch.setUint16(28,name.length,true);ch.setUint32(42,offset,true);
+    central.push(ch.buffer,name);
+    offset+=30+name.length+size;
+  }
+  const cdSize=central.reduce((n,x)=>n+x.byteLength,0),end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true);end.setUint16(8,files.length,true);end.setUint16(10,files.length,true);end.setUint32(12,cdSize,true);end.setUint32(16,offset,true);
+  return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
+}
+// A cell that starts with = + - or @ is treated as a formula by spreadsheets, so those get a leading apostrophe.
+const csvCell=v=>{let s=v==null?'':String(v);if(/^[=+\-@\t\r]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+function coverFile(e){
+  const m=/^data:image\/([a-z0-9.+-]+);base64,/i.exec(e.cover||'');
+  return m?'covers/'+e.id+'.'+(m[1].toLowerCase()==='jpeg'?'jpg':m[1].toLowerCase().replace(/[^a-z0-9]/g,'')):'';
+}
+function entriesCSV(){
+  const head=['Title','Type','Creator','Status','Stars','Feeling','Food scale','Genres','Franchise','Lists','Series / volume','First started','Last finished','Dated runs','Pages','Narrator','Audiobook hours','Format','Link','Cover file','Notes','Added','Updated','Id'];
+  const rows=[...db.entries].sort(byTitle).map(e=>{
+    const d=e.details||{},starts=e.dates.map(r=>r.start).filter(Boolean).sort(),ends=e.dates.map(r=>r.end).filter(Boolean).sort();
+    return [e.title,(TYPES[e.type]||TYPES.book).label,e.creator,statusLabel(e.status),e.stars==null?'':e.stars,(feelOf(e.feeling)||{}).label||'',(foodOf(e.food)||{}).label||'',e.genres.join('; '),
+      (frById(e.franchiseId)||{}).name||'',(e.listIds||[]).map(i=>(listById(i)||{}).name).filter(Boolean).join('; '),d.series||'',starts[0]||'',ends[ends.length-1]||'',e.dates.length,d.pages||'',d.narrator||'',d.audioHours||'',d.format||'',e.url||'',coverFile(e),e.notes,e.created,e.updated,e.id];
+  });
+  return '﻿'+[head,...rows].map(r=>r.map(csvCell).join(',')).join('\r\n')+'\r\n';
+}
+function dataUrlBytes(u){const m=/^data:image\/[a-z0-9.+-]+;base64,(.*)$/i.exec(u||'');if(!m)return null;const bin=atob(m[1]),b=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);return b;}
+const EXPORT_README=(signedIn,withVersions)=>`Marginalia export
+=================
+Made ${new Date().toISOString()}.
+
+What is in this zip
+  marginalia-library.json   Your whole library: entries, franchises, lists, saved views and the record of deletions.
+                            Restore it with Settings > Import and merge.
+  entries.csv               One row per entry, for spreadsheets (UTF-8, opens in Excel, Numbers and Sheets).
+  covers/                   Your cover images as files, named by entry id (the "Cover file" column in entries.csv).
+  settings.json             Your look and readability settings on this device.
+${signedIn?`  account.json              Your username, when the account was created and which features are switched on.
+  shares.json               Your read-only share links. Each token is a secret: anyone with a link can view what it shows.
+`:''}${withVersions?`  versions/                 Earlier snapshots of your library kept by the server. Each file can be imported like the main one.
+`:''}
+Keep this file private: it contains your notes${signedIn?' and your share-link tokens':''}.
+`;
+let exporting=false;
+async function exportEverything(withVersions){
+  if(exporting)return;exporting=true;
+  const msg=t=>{const m=$('#exportmsg');if(m)m.textContent=t;};
+  try{
+    msg('Preparing…');
+    let server=null,warn='';
+    if(sync.token&&!sync.mustChange){
+      await syncNow();
+      try{const r=await api('GET','/api/export'+(withVersions?'?versions=1':''));if(r.status===200)server=r.body;else warn=r.body.error||'Account data was not included.';}
+      catch(e){warn='You are offline, so account data and version history were left out.';}
+    }
+    const enc=new TextEncoder(),files=[],add=(name,text)=>files.push({name,data:enc.encode(text)});
+    add('README.txt',EXPORT_README(!!server,!!(server&&withVersions)));
+    add('marginalia-library.json',JSON.stringify(db,null,1));
+    add('entries.csv',entriesCSV());
+    let covers=0;
+    for(const e of db.entries){const f=coverFile(e),b=f&&dataUrlBytes(e.cover);if(b){files.push({name:f,data:b});covers++;}}
+    add('settings.json',JSON.stringify(settings,null,1));
+    if(server){
+      add('account.json',JSON.stringify({exportedAt:server.exportedAt,account:server.account,features:server.features},null,1));
+      add('shares.json',JSON.stringify(server.shares,null,1));
+      if(withVersions)for(const v of server.versions)add('versions/version-'+v.id+'-'+String(v.asOf).slice(0,16).replace(/[-:T]/g,'')+'.json',JSON.stringify(v.data,null,1));
+    }
+    const blob=makeZip(files),u=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=u;a.download='marginalia-export-'+today()+'.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
+    msg('Done: '+db.entries.length+' entr'+(db.entries.length===1?'y':'ies')+(covers?', '+plural(covers,'cover'):'')+(server&&withVersions?', '+plural(server.versions.length,'version'):'')+'.'+(warn?' '+warn:''));
+    toast('Export ready'+(warn?'. '+warn:''));
+  }catch(e){msg('');toast('Export failed: '+(e&&e.message||'unknown error'));}
+  finally{exporting=false;}
+}
+function exportPanel(){
+  if(!feat('export_all')||native)return '';
+  return `<div class="panel"><h2>Export everything</h2><p>One zip with your whole library: <code>marginalia-library.json</code> (restore it with Import and merge), <code>entries.csv</code> for spreadsheets, your cover images as files, your settings${sync.token?', and your account details and share links':''}.</p>
+  ${sync.token?'<label style="font-weight:400"><input type="checkbox" id="exp-versions" style="width:auto;min-height:0"> Include version history (can be large)</label>':''}
+  <p class="chips" style="align-items:center"><button type="button" class="btn" data-act="export-all">Export everything (.zip)</button><span id="exportmsg" class="muted small" role="status"></span></p></div>`;
+}
+
+/* ---------- undo (flag: undo) ---------- */
+const undoStack=[];
+const undoSnap=()=>feat('undo')?JSON.stringify(db):null;   // taken before an action; null means "no undo, so confirm instead"
+const UNDO_KINDS=['entries','franchises','lists','views'];
+function undoDiff(beforeStr){   // only what the action changed, so the stack stays small
+  const b=JSON.parse(beforeStr),changes=[];
+  for(const kind of UNDO_KINDS){
+    const B=new Map((b[kind]||[]).map(r=>[r.id,r])),A=new Map((db[kind]||[]).map(r=>[r.id,r]));
+    for(const id of new Set([...B.keys(),...A.keys()])){const x=B.get(id),y=A.get(id);if(canon(x)!==canon(y))changes.push({kind,id,b:x,a:y&&JSON.parse(JSON.stringify(y))});}   // a copy, so later edits are noticed
+  }
+  const dm=canon(b.dismissed||[])!==canon(db.dismissed||[])?{b:b.dismissed||[],a:db.dismissed||[]}:null;
+  return {changes,dm};
+}
+function toastUndo(msg){
+  const t=$('#toast');t.innerHTML=esc(msg)+' <button type="button" class="toastbtn" data-act="undo">Undo</button>';t.hidden=false;
+  clearTimeout(toast.t);toast.t=setTimeout(()=>{t.hidden=true;},10000);
+}
+function offerUndo(msg,snap){
+  if(!snap){toast(msg);return;}
+  const d=undoDiff(snap);
+  if(!d.changes.length&&!d.dm){toast(msg);return;}
+  undoStack.push(Object.assign(d,{msg,t:Date.now()}));if(undoStack.length>5)undoStack.shift();
+  toastUndo(msg);
+}
+function undoLast(){
+  const u=undoStack.pop();
+  if(!u||Date.now()-u.t>3600000){toast('Nothing to undo');return;}
+  const t=now();let skipped=0;
+  for(const c of u.changes){
+    const list=db[c.kind],cur=list.find(r=>r.id===c.id);
+    if(canon(cur)!==canon(c.a)){skipped++;continue;}   // changed since the action: leave it as it is
+    if(c.b){   // restored records get a fresh timestamp so every other device accepts them
+      const r=Object.assign({},JSON.parse(JSON.stringify(c.b)),{updated:t}),i=list.findIndex(x=>x.id===c.id);
+      if(i>=0)list[i]=r;else list.push(r);
+      delete db.deleted[c.id];
+    }else{db[c.kind]=list.filter(r=>r.id!==c.id);db.deleted[c.id]=t;}
+  }
+  if(u.dm&&canon(db.dismissed||[])===canon(u.dm.a))db.dismissed=u.dm.b;
+  picked.clear();
+  changed();
+  toast('Undone: '+u.msg+(skipped?' ('+plural(skipped,'item')+' left as they are because they changed since)':''));
 }
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
@@ -1723,6 +1863,7 @@ function viewSettings(){
   ${canLink&&feat('file_link')?`${fileState==='permission'?'<button class="btn primary" data-act="reconnect">Reconnect file</button>':''}<button class="btn" data-act="link">${fileHandle?'Link a different file':'Link a file'}</button>${fileHandle?'<button class="btn" data-act="unlink">Unlink</button>':''}`:''}
   <button class="btn" data-act="export">Export backup</button><button class="btn" data-act="import">Import and merge</button></div>
   ${native||!feat('drag_drop_import')?'':'<p class="muted small">You can also drop a backup .json file anywhere on this page to import it.</p>'}</div>
+  ${exportPanel()}
   ${importPanel()}
   <div class="panel"><h2>Look &amp; readability</h2>
     <div class="row2">
@@ -1843,9 +1984,9 @@ function saveEditor(){
   if(i<0&&route().p==='entry')location.hash='#/entry/'+rec.id;
 }
 function deleteEntry(id){
-  const e=byId(id);if(!e||!confirm(`Delete “${e.title}”? This can't be undone.`))return;
+  const e=byId(id),snap=undoSnap();if(!e||(!snap&&!confirm(`Delete “${e.title}”? This can't be undone.`)))return;
   removeEntries(new Set([id]));
-  location.hash='#/library';changed();toast('Deleted');
+  location.hash='#/library';changed();offerUndo('Deleted “'+e.title+'”',snap);
 }
 
 /* ---------- sync with GitHub ---------- */
@@ -1906,7 +2047,7 @@ function preview(text){
     $('#picks').onchange=calculate;
     for(const [k,on] of [['pickAll',true],['pickNone',false]])$('#'+k).onclick=()=>{o.querySelectorAll('#picks input').forEach(el=>el.checked=on);calculate();};
     $('#dropImport').onclick=dismissImport;
-    $('#applyImport').onclick=()=>{const previous=db;db=result;if(!saveLocal()){db=previous;return;}dismissImport();render();toast(storageStatus);};
+    $('#applyImport').onclick=()=>{const snap=undoSnap(),previous=db;db=result;if(!saveLocal()){db=previous;return;}dismissImport();render();if(snap)offerUndo('Import applied',snap);else toast(storageStatus);};
     calculate();
   }catch(e){dismissImport();toast('Import failed: '+e.message);}
 }
@@ -1998,10 +2139,10 @@ document.addEventListener('click',ev=>{
     /* franchises */
     case 'new-franchise':{const n=prompt('Franchise name?');if(n&&n.trim()){const id=ensureFranchise(n);changed();location.hash='#/franchise/'+id;}break;}
     case 'fr-rename':{const n=prompt('New name?',fr.name);if(n&&n.trim()&&n.trim()!==fr.name){if(db.franchises.some(x=>x.id!==fr.id&&x.name.toLowerCase()===n.trim().toLowerCase())){toast('A franchise with that name exists');break;}fr.name=n.trim();fr.updated=now();changed();}break;}
-    case 'fr-del':{if(confirm(`Delete the franchise “${fr.name}”? Entries stay, they just lose the franchise.`)){db.entries.forEach(e=>{if(e.franchiseId===fr.id){e.franchiseId='';e.updated=now();}});db.franchises=db.franchises.filter(x=>x.id!==fr.id);db.deleted[fr.id]=now();location.hash='#/franchises';changed();}break;}
+    case 'fr-del':{const snap=undoSnap();if(snap||confirm(`Delete the franchise “${fr.name}”? Entries stay, they just lose the franchise.`)){db.entries.forEach(e=>{if(e.franchiseId===fr.id){e.franchiseId='';e.updated=now();}});db.franchises=db.franchises.filter(x=>x.id!==fr.id);db.deleted[fr.id]=now();location.hash='#/franchises';changed();offerUndo('Deleted franchise “'+fr.name+'”',snap);}break;}
     case 'tl-create':{const inp=$('#tl-new');const n=inp.value.trim();if(!n){toast('Name the timeline first');break;}fr.timelines.push({id:uid(),name:n,items:[]});fr.updated=now();changed();break;}
     case 'tl-rename':{const n=prompt('New name?',tline.name);if(n&&n.trim()){tline.name=n.trim();fr.updated=now();changed();}break;}
-    case 'tl-del':{if(confirm(`Delete the timeline “${tline.name}”?`)){fr.timelines=fr.timelines.filter(t=>t!==tline);fr.updated=now();changed();}break;}
+    case 'tl-del':{const snap=undoSnap();if(snap||confirm(`Delete the timeline “${tline.name}”?`)){fr.timelines=fr.timelines.filter(t=>t!==tline);fr.updated=now();changed();offerUndo('Deleted timeline “'+tline.name+'”',snap);}break;}
     case 'tl-add':{const s=$('#tl-add-'+tline.id);if(!s.value){toast('Choose an entry to add');break;}tline.items.push({id:uid(),entryId:s.value,note:''});fr.updated=now();changed();break;}
     case 'tl-remove':tline.items.splice(i,1);fr.updated=now();changed();break;
     case 'tl-up':if(i>0){[tline.items[i-1],tline.items[i]]=[tline.items[i],tline.items[i-1]];fr.updated=now();changed();}break;
@@ -2029,14 +2170,14 @@ document.addEventListener('click',ev=>{
     case 'adm-delete':(async()=>{const n=prompt('This deletes the account "'+el.dataset.name+'" and its library, versions and sign-ins, and cannot be undone.\n\nType the username to confirm:');
       if(n===null)return;if(n.trim().toLowerCase()!==el.dataset.name){toast('That did not match. Nothing was deleted.');return;}
       const r=await adminCall('DELETE','/api/admin/users/'+el.dataset.id,undefined,'Deleted "'+el.dataset.name+'".');if(r)loadAdmin();})();break;
-    case 'tl-from-series':{const f=frById(el.dataset.f),o=f&&franchiseOrder(f.id);if(!o)break;const t=f.timelines.find(x=>x.name==='Series order');const items=o.map(e=>{const old=t&&t.items.find(i=>i.entryId===e.id);return {id:old?old.id:uid(),entryId:e.id,note:old?old.note:((e.details||{}).series||'')};});if(t)t.items=items;else f.timelines.push({id:uid(),name:'Series order',items});f.updated=now();changed();toast('“Series order” timeline updated');break;}
-    case 'gen-rename':{const nn=prompt('Rename “'+v+'” to…',v),t=(nn||'').trim().toLowerCase();if(!t||t===v)break;if(genreCounts().has(t)&&!confirm('“'+t+'” already exists. Merge “'+v+'” into it?'))break;const n=applyGenreMap(new Map([[v,t]]));gsel.delete(v);toast('Updated '+plural(n,'book'));changed();break;}
-    case 'gen-delete':{const c=genreCounts().get(v)||0;if(!confirm('Remove the genre “'+v+'” from '+plural(c,'book')+'? The books stay.'))break;const n=applyGenreMap(new Map([[v,null]]));gsel.delete(v);toast('Removed from '+plural(n,'book'));changed();break;}
-    case 'gen-merge-sug':{const list=JSON.parse(v),target=list[0],n=applyGenreMap(new Map(list.slice(1).map(g=>[g,target])));list.forEach(g=>gsel.delete(g));toast('Merged into “'+target+'” ('+plural(n,'book')+')');changed();break;}
-    case 'gen-merge-sel':{if(gsel.size<2){toast('Tick at least two genres first');break;}const counts=genreCounts(),sel=[...gsel].sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0)),nn=prompt('Merge '+sel.length+' genres into…',sel[0]),t=(nn||'').trim().toLowerCase();if(!t)break;const n=applyGenreMap(new Map(sel.filter(g=>g!==t).map(g=>[g,t])));gsel.clear();toast('Merged into “'+t+'” ('+plural(n,'book')+')');changed();break;}
+    case 'tl-from-series':{const f=frById(el.dataset.f),o=f&&franchiseOrder(f.id);if(!o)break;const snap=undoSnap(),t=f.timelines.find(x=>x.name==='Series order');const items=o.map(e=>{const old=t&&t.items.find(i=>i.entryId===e.id);return {id:old?old.id:uid(),entryId:e.id,note:old?old.note:((e.details||{}).series||'')};});if(t)t.items=items;else f.timelines.push({id:uid(),name:'Series order',items});f.updated=now();changed();offerUndo('“Series order” timeline updated',snap);break;}
+    case 'gen-rename':{const nn=prompt('Rename “'+v+'” to…',v),t=(nn||'').trim().toLowerCase();if(!t||t===v)break;if(genreCounts().has(t)&&!confirm('“'+t+'” already exists. Merge “'+v+'” into it?'))break;const snap=undoSnap(),n=applyGenreMap(new Map([[v,t]]));gsel.delete(v);changed();offerUndo('Renamed genre “'+v+'” to “'+t+'” ('+plural(n,'book')+')',snap);break;}
+    case 'gen-delete':{const c=genreCounts().get(v)||0,snap=undoSnap();if(!snap&&!confirm('Remove the genre “'+v+'” from '+plural(c,'book')+'? The books stay.'))break;const n=applyGenreMap(new Map([[v,null]]));gsel.delete(v);changed();offerUndo('Removed genre “'+v+'” from '+plural(n,'book'),snap);break;}
+    case 'gen-merge-sug':{const list=JSON.parse(v),target=list[0],snap=undoSnap(),n=applyGenreMap(new Map(list.slice(1).map(g=>[g,target])));list.forEach(g=>gsel.delete(g));changed();offerUndo('Merged into “'+target+'” ('+plural(n,'book')+')',snap);break;}
+    case 'gen-merge-sel':{if(gsel.size<2){toast('Tick at least two genres first');break;}const counts=genreCounts(),sel=[...gsel].sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0)),nn=prompt('Merge '+sel.length+' genres into…',sel[0]),t=(nn||'').trim().toLowerCase();if(!t)break;const snap=undoSnap(),n=applyGenreMap(new Map(sel.filter(g=>g!==t).map(g=>[g,t])));gsel.clear();changed();offerUndo('Merged into “'+t+'” ('+plural(n,'book')+')',snap);break;}
     case 'gen-sel-none':gsel.clear();render();break;
     case 'gen-filter':F=defaults();F.include.genre=[v];lastView=null;location.hash='#/library';break;
-    case 'dup-merge':{const radio=document.querySelector('input[name="keep-'+v+'"]:checked');if(!radio)break;const keepId=radio.value,keep=byId(keepId),others=[...document.querySelectorAll('input[name="inc-'+v+'"]:checked')].map(x=>x.value).filter(i=>i!==keepId);if(!keep)break;if(!others.length){toast('Tick at least one other entry to merge in');break;}if(!confirm('Merge '+others.length+' other entr'+(others.length===1?'y':'ies')+' into “'+keep.title+'”? The others are removed'+(sync.token&&feat('version_history')?' (Version history can bring them back).':'.')))break;const n=mergeEntries(keepId,others);toast('Merged '+n+' duplicate'+(n===1?'':'s'));changed();break;}
+    case 'dup-merge':{const radio=document.querySelector('input[name="keep-'+v+'"]:checked');if(!radio)break;const keepId=radio.value,keep=byId(keepId),others=[...document.querySelectorAll('input[name="inc-'+v+'"]:checked')].map(x=>x.value).filter(i=>i!==keepId);if(!keep)break;if(!others.length){toast('Tick at least one other entry to merge in');break;}const snap=undoSnap();if(!snap&&!confirm('Merge '+others.length+' other entr'+(others.length===1?'y':'ies')+' into “'+keep.title+'”? The others are removed'+(sync.token&&feat('version_history')?' (Version history can bring them back).':'.')))break;const n=mergeEntries(keepId,others);changed();offerUndo('Merged '+n+' duplicate'+(n===1?'':'s')+' into “'+keep.title+'”',snap);break;}
     case 'dup-dismiss':db.dismissed=[...(db.dismissed||[]),v].slice(-500);changed();break;
     case 'view-all':F=defaults();lastView=null;render();break;
     case 'view-apply':{const w=listViewById(el.dataset.id);if(!w)break;F=filterOfView(w);lastView=w.id;if(route().p!=='library')location.hash='#/library';else render();break;}
@@ -2044,7 +2185,9 @@ document.addEventListener('click',ev=>{
     case 'view-update':{const w=listViewById(el.dataset.id);if(!w)break;w.filter=currentFilter();w.updated=now();changed();toast('View updated');break;}
     case 'view-pin':{const w=listViewById(el.dataset.id);if(!w)break;w.pinned=!w.pinned;w.updated=now();changed();break;}
     case 'view-rename':{const w=listViewById(el.dataset.id),nm=w&&prompt('New name?',w.name);if(nm&&nm.trim()){w.name=nm.trim().slice(0,80);w.updated=now();changed();}break;}
-    case 'view-del':{const w=listViewById(el.dataset.id);if(w&&confirm('Delete the view “'+w.name+'”? Your books are not affected.')){db.views=db.views.filter(x=>x.id!==w.id);db.deleted[w.id]=now();if(lastView===w.id)lastView=null;changed();}break;}
+    case 'view-del':{const w=listViewById(el.dataset.id),snap=undoSnap();if(w&&(snap||confirm('Delete the view “'+w.name+'”? Your books are not affected.'))){db.views=db.views.filter(x=>x.id!==w.id);db.deleted[w.id]=now();if(lastView===w.id)lastView=null;changed();offerUndo('Deleted view “'+w.name+'”',snap);}break;}
+    case 'export-all':exportEverything(!!($('#exp-versions')&&$('#exp-versions').checked));break;
+    case 'undo':undoLast();break;
     case 'preview':openPreview(el.dataset.id);break;
     case 'preview-close':closePreview();break;
     case 'qstar':setStars(el.dataset.id,el.dataset.v);break;
@@ -2058,7 +2201,7 @@ document.addEventListener('click',ev=>{
     case 'prog':bumpProgress(el.dataset.id,el.dataset.k,el.dataset.v);break;
     case 'list-create':{const inp=$('#list-new'),n=inp&&inp.value.trim();if(!n){toast('Name the list first');break;}const id=ensureList(n);changed();location.hash='#/list/'+id;break;}
     case 'list-rename':{const l=listById(el.dataset.l),n=l&&prompt('New name?',l.name);if(n&&n.trim()&&n.trim()!==l.name){if(db.lists.some(x=>x.id!==l.id&&x.name.toLowerCase()===n.trim().toLowerCase())){toast('A list with that name exists');break;}l.name=n.trim();l.updated=now();changed();}break;}
-    case 'list-del':{const l=listById(el.dataset.l);if(l&&confirm(`Delete the list “${l.name}”? Entries stay, they just leave the list.`)){db.entries.forEach(e=>{if(inList(e,l.id)){e.listIds=e.listIds.filter(i=>i!==l.id);e.updated=now();}});db.lists=db.lists.filter(x=>x.id!==l.id);db.deleted[l.id]=now();location.hash='#/lists';changed();}break;}
+    case 'list-del':{const l=listById(el.dataset.l),snap=undoSnap();if(l&&(snap||confirm(`Delete the list “${l.name}”? Entries stay, they just leave the list.`))){db.entries.forEach(e=>{if(inList(e,l.id)){e.listIds=e.listIds.filter(i=>i!==l.id);e.updated=now();}});db.lists=db.lists.filter(x=>x.id!==l.id);db.deleted[l.id]=now();location.hash='#/lists';changed();offerUndo('Deleted list “'+l.name+'”',snap);}break;}
     case 'list-add':{const sel=$('#list-add-'+el.dataset.l);if(!sel||!sel.value){toast('Choose an entry to add');break;}setEntryList(sel.value,el.dataset.l,true);changed();break;}
     case 'list-remove':case 'entry-list-remove':setEntryList(el.dataset.id,el.dataset.l,false);changed();break;
     case 'entry-list-add':{const sel=$('#entry-list-add');if(!sel||!sel.value){toast('Choose a list');break;}let lid=sel.value;if(lid==='__new'){const n=prompt('Name for the new list?');if(!n||!n.trim())break;lid=ensureList(n);}setEntryList(el.dataset.id,lid,true);changed();break;}
@@ -2102,6 +2245,7 @@ document.addEventListener('keydown',ev=>{
     else if(t.id==='q'){if(t.value){t.value='';F.q='';render();}t.blur();}
     return;
   }
+  if(mod&&!ev.shiftKey&&!ev.altKey&&(ev.key==='z'||ev.key==='Z')&&!typing&&feat('undo')&&undoStack.length){ev.preventDefault();undoLast();return;}
   if(!feat('shortcuts'))return;
   if(mod&&!ev.altKey&&(ev.key==='s'||ev.key==='S')){ev.preventDefault();if(ed)saveEditor();else toast(storageStatus);return;}
   if(mod&&ev.key==='Enter'&&ed){ev.preventDefault();saveEditor();return;}

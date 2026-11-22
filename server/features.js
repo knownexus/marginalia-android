@@ -28,7 +28,9 @@ const FLAG_DEFAULTS = {
   genre_manager: false,   // Tidy up: rename, merge and delete genres
   saved_views: false,     // Named filter sets on the Library page, pinnable to Home
   listening_stats: false, // Audiobook hours on the Stats page and in Year wrapped
-  duplicates: false       // Tidy up: find and merge duplicate entries
+  duplicates: false,      // Tidy up: find and merge duplicate entries
+  export_all: false,      // Export everything: a zip with the library, a spreadsheet, covers, settings and account data
+  undo: false             // Undo toasts (and Ctrl+Z) instead of confirm dialogs for destructive actions
 };
 
 const SCHEMA = `
