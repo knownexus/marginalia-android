@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-kjBDiECVLVJvOcQ6P5Y/dRQipfOccSW2hmh7DreSLyQ='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-DLzWScN8ouPBwv5HXNo8nqeuhgrFCncPcKGkRIUU/bM='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -255,7 +255,9 @@ const TYPES={
     {k:'format',label:'Format',kind:'select',options:['Paper','E-book','Audiobook','Comic / manga']},
     {k:'series',label:'Series / volume',kind:'text'},
     {k:'narrator',label:'Narrator',kind:'text',flag:'import_trackers'},
-    {k:'audioHours',label:'Audiobook length (hours)',kind:'number',flag:'import_trackers'}]},
+    {k:'audioHours',label:'Audiobook length (hours)',kind:'number',flag:'import_trackers'},
+    {k:'audibleRating',label:'Audible rating (listeners, of 5)',kind:'number',flag:'import_trackers'},
+    {k:'narrationRating',label:'Narration rating (listeners, of 5)',kind:'number',flag:'import_trackers'}]},
   tv:{label:'TV show',icon:'📺',creator:'Creator',fields:[
     {k:'seasons',label:'Seasons watched',kind:'text'},
     {k:'episodes',label:'Episode progress',kind:'text'},
@@ -1036,6 +1038,9 @@ function importAudible(rows){
     const details={format:'Audiobook'};
     if(narrator)details.narrator=narrator;
     if(minutes>0)details.audioHours=Math.round(minutes/6)/10;
+    const ar=Number(get(r,'communityratingoverall')),nr=Number(get(r,'communityratingperformance'));
+    if(ar>0)details.audibleRating=Math.round(ar*100)/100;
+    if(nr>0)details.narrationRating=Math.round(nr*100)/100;
     if(primary)details.series=primary.name+(primary.order?' #'+primary.order:'');
     const locale=String(get(r,'locale')).toLowerCase();
     out.entries.push(importEntry({id:'aud-'+asin,type:'book',title,creator:cleanAuthors(get(r,'authornames','authors','author')),status:finished?'finished':'planned',stars:halfStar(get(r,'myratingoverall','myrating','rating')),
