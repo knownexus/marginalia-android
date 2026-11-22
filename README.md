@@ -18,6 +18,10 @@ Open **Library → Sort and filter**. Include or exclude values in each section.
 
 ### Use it on desktop
 
+Hosted at https://web-production-ac96f798.up.railway.app (Railway, built from the `Dockerfile` in this repo). Your library stays in your own browser. Opening the address on a new device starts empty, so move data with export and import.
+
+To run it locally instead:
+
 The app is a single offline page, so it also runs in a desktop browser. Open `app/src/main/assets/index.html` in Chrome or Edge (or copy that one file anywhere and open it). Nothing is uploaded.
 
 - **Same library as your phone:** use **Export backup** on one side and **Import and merge** on the other. You can also drop a backup `.json` file onto the page.
