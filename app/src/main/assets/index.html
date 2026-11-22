@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-J9kYtDxJRW6Zpx1LebhLjfd2JNtaC7X5M1dhi80+Le0='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3UqUBODEWGlWaXVy9CIYy0HeDEl996fRne4khIy1pFg='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -215,6 +215,7 @@ html,#overlay{scroll-padding-block:12px}
       <a href="#/library" data-nav="library">Library</a>
       <a href="#/franchises" data-nav="franchises">Franchises</a>
       <a href="#/lists" data-nav="lists" hidden>Lists</a>
+      <a href="#/tidy" data-nav="tidy" hidden>Tidy up</a>
       <a href="#/stats" data-nav="stats">Stats</a>
       <a href="#/wrapped" data-nav="wrapped">Year wrapped</a>
       <a href="#/admin" data-nav="admin" hidden>Admin</a>
@@ -327,6 +328,8 @@ function normalize(d){
   d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'planned',stars:null,feeling:'',food:'',dates:[],details:{},notes:'',links:[],cover:'',url:'',listIds:[],created:now(),updated:now()},e,{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[],listIds:e.listIds||[]}));
   d.franchises=(d.franchises||[]).map(f=>Object.assign({name:'',notes:'',created:now(),updated:now()},f,{timelines:f.timelines||[]}));
   d.lists=(d.lists||[]).map(l=>Object.assign({name:'',notes:'',created:now(),updated:now()},l));
+  d.views=(d.views||[]).map(v=>Object.assign({name:'',filter:{},pinned:false,created:now(),updated:now()},v));
+  d.dismissed=Array.isArray(d.dismissed)?d.dismissed:[];
   d.deleted=d.deleted||{};
   d.version=1;
   return d;
@@ -406,9 +409,11 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false;
    chosen users only, add it here as false, gate the feature with feat('name'), and turn it on for them. */
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
   version_history:false,offline_app:false,quick_add:false,sync_notices:false,
-  covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false};
+  covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false,
+  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false};
 const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
-  covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions'};
+  covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions',
+  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
@@ -551,14 +556,14 @@ async function restoreVersion(id){
     await syncNow();                       // so the server holds your latest edits, and they become a version too
     const r=await api('GET','/api/versions/'+id);
     if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);
-    const v=normalize(r.body.data),keep=new Set([...v.entries,...v.franchises].map(x=>x.id));
-    const have=new Set([...db.entries,...db.franchises].map(x=>x.id));
+    const v=normalize(r.body.data),keep=new Set([...v.entries,...v.franchises,...v.lists,...v.views].map(x=>x.id));
+    const have=new Set([...db.entries,...db.franchises,...db.lists,...db.views].map(x=>x.id));
     const back=[...keep].filter(i=>!have.has(i)).length,gone=[...have].filter(i=>!keep.has(i));
     if(!confirm('Restore the library as it was on '+when(r.body.asOf)+'?\n\n'+back+' item(s) come back and '+gone.length+' added since then are removed. Your current library is kept as a version, so you can undo this.'))return;
     const t=now(),deleted=Object.assign({},db.deleted);
     keep.forEach(i=>delete deleted[i]);gone.forEach(i=>deleted[i]=t);
     // Restored records get fresh timestamps so every other device accepts them when it syncs.
-    db=normalize({version:1,entries:v.entries.map(e=>Object.assign({},e,{updated:t})),franchises:v.franchises.map(f=>Object.assign({},f,{updated:t})),deleted});
+    db=normalize({version:1,entries:v.entries.map(e=>Object.assign({},e,{updated:t})),franchises:v.franchises.map(f=>Object.assign({},f,{updated:t})),lists:v.lists.map(l=>Object.assign({},l,{updated:t})),views:v.views.map(w=>Object.assign({},w,{updated:t})),dismissed:v.dismissed,deleted});
     skipSchedule=true;try{if(!saveLocal())return;}finally{skipSchedule=false;}
     forceSnapshot=true;await syncNow();hist.rows=null;render();toast('Library restored');
     if(feat('version_history'))loadVersions();
@@ -1166,6 +1171,193 @@ function paintPreview(){
 }
 function openPreview(id){previewId=id;paintPreview();setTimeout(()=>{const c=$('#preview [data-act=preview-close]');if(c)c.focus();},30);}
 function closePreview(){const id=previewId;previewId=null;const pv=$('#preview');pv.hidden=true;pv.innerHTML='';document.body.classList.remove('pv-open');if(id){const b=document.querySelector('.titlebtn[data-id="'+id+'"]');if(b)b.focus();}}
+/* ---------- next up in a series (flag: next_up) ---------- */
+function seriesNum(e){
+  const s=String((e.details||{}).series||'').trim();
+  const m=/#\s*(\d+(?:\.\d+)?)\s*$/.exec(s)||/(?:book|vol(?:ume)?\.?|part|no\.?)\s*(\d+(?:\.\d+)?)/i.exec(s)||/^(\d+(?:\.\d+)?)$/.exec(s);
+  return m?Number(m[1]):null;
+}
+function franchiseOrder(fid){
+  const es=db.entries.filter(e=>e.franchiseId===fid);
+  if(es.filter(e=>seriesNum(e)!=null).length<2)return null;
+  return es.sort((a,b)=>{const x=seriesNum(a),y=seriesNum(b);if(x!=null&&y!=null)return x-y||byTitle(a,b);if(x!=null)return -1;if(y!=null)return 1;return byTitle(a,b);});
+}
+function nextInOrder(order){
+  let last=-1;order.forEach((e,i)=>{if(e.status==='finished'||e.status==='ongoing')last=i;});
+  if(last<0||order.some(e=>e.status==='ongoing'))return null;
+  return order.slice(last+1).find(e=>e.status==='planned'||e.status==='paused')||null;
+}
+function nextUpList(){
+  const out=[];
+  for(const f of db.franchises){
+    const order=franchiseOrder(f.id);if(!order)continue;
+    const n=nextInOrder(order);if(!n)continue;
+    const done=order.filter(e=>e.status==='finished');
+    out.push({f,n,done:done.length,total:order.length,when:done.map(e=>latestRun(e)||'').sort().pop()||''});
+  }
+  return out.sort((a,b)=>b.when.localeCompare(a.when)||a.f.name.localeCompare(b.f.name));
+}
+function nextUpSection(){
+  if(!feat('next_up'))return '';
+  const list=nextUpList().slice(0,8);if(!list.length)return '';
+  return `<div class="divider">☾</div><h2>Next up in your series</h2><div class="grid">${list.map(({f,n,done,total})=>`<div><p class="muted small" style="margin:0 0 .3rem">❦ <a href="#/franchise/${f.id}">${esc(f.name)}</a> · ${done} of ${total} done</p>${cardHTML(n)}<div class="prog"><button type="button" class="btn small" data-act="prog" data-id="${n.id}" data-k="start">▶ Start</button></div></div>`).join('')}</div>`;
+}
+function franchiseCards(mine,f){
+  if(!mine.length)return '<p class="muted">Nothing here yet. Set the franchise when logging an entry.</p>';
+  const order=feat('next_up')&&franchiseOrder(f.id),nx=order?nextInOrder(order):null;
+  return `<div class="grid">${mine.map(e=>e===nx?`<div><p class="small" style="margin:0 0 .3rem"><b>▶ Next up</b></p>${cardHTML(e)}</div>`:cardHTML(e)).join('')}</div>`;
+}
+function entrySeries(e){
+  if(!feat('next_up')||!e.franchiseId)return '';
+  const order=franchiseOrder(e.franchiseId),i=order?order.indexOf(e):-1;if(i<0)return '';
+  const f=frById(e.franchiseId),link=x=>`<a href="#/entry/${x.id}">${esc(x.title)}</a>`;
+  return `<div class="panel"><h2>In this series</h2><p style="margin:0">Book ${i+1} of ${order.length} in ❦ <a href="#/franchise/${f.id}">${esc(f.name)}</a></p><p class="muted" style="margin:.4rem 0 0">${i>0?'Previous: '+link(order[i-1]):'First in the series'}${i<order.length-1?' · Next: '+link(order[i+1]):' · Latest in your library'}</p></div>`;
+}
+
+/* ---------- listening stats (flag: listening_stats) ---------- */
+const isAudio=e=>e.type==='book'&&(e.details||{}).format==='Audiobook'&&Number((e.details||{}).audioHours)>0;
+const hrs=e=>Number(e.details.audioHours);
+const fmtHours=h=>h>=48?num(h/24)+' days':num(h)+' h';
+function listeningHTML(){
+  const A=db.entries.filter(isAudio);if(!A.length)return '';
+  const fin=A.filter(e=>e.status==='finished'),todo=A.filter(e=>e.status!=='finished'&&e.status!=='dropped');
+  const sum=l=>l.reduce((s,e)=>s+hrs(e),0),tile=(b,l)=>`<div class="stat" style="cursor:default"><b>${b}</b>${l}</div>`;
+  const byYear=new Map();let undated=0;
+  fin.forEach(e=>{const ys=[...new Set(e.dates.filter(r=>r.end).map(r=>r.end.slice(0,4)))];if(!ys.length){undated++;return;}ys.forEach(y=>byYear.set(y,(byYear.get(y)||0)+hrs(e)));});
+  const top=(keyFn,n)=>{const m=new Map();fin.forEach(e=>keyFn(e).forEach(k=>m.set(k,(m.get(k)||0)+hrs(e))));return [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,n).map(([k,h])=>[esc(k),Math.round(h)]);};
+  const buckets=[['Under 5 h',0,5],['5–10 h',5,10],['10–15 h',10,15],['15–20 h',15,20],['20 h or more',20,1e9]].map(([l,lo,hi])=>[l,A.filter(e=>hrs(e)>=lo&&hrs(e)<hi).length]);
+  const longest=[...fin].sort((a,b)=>hrs(b)-hrs(a))[0];
+  const box=(h,b)=>`<div class="panel"><h2>${h}</h2>${b}</div>`;
+  return `<div class="panel"><h2>🎧 Listening</h2><div class="stats-strip">
+      ${tile(fmtHours(sum(fin)),'listened (finished)')}${tile(fin.length,'audiobooks finished')}${tile(fin.length?num(sum(fin)/fin.length)+' h':'–','average length')}${tile(fmtHours(sum(todo)),'still to listen to')}
+    </div>${longest?`<p class="muted" style="margin:.2rem 0 0">Longest finished: <a href="#/entry/${longest.id}">${esc(longest.title)}</a> (${num(hrs(longest))} h)</p>`:''}
+    ${undated?`<p class="muted small" style="margin:.4rem 0 0">${undated} finished audiobook${undated===1?' has':'s have'} no finish date, so ${undated===1?'it is':'they are'} left out of the by-year chart.</p>`:''}</div>`
+  +(byYear.size?box('Hours listened by year',bars([...byYear.entries()].sort().reverse().map(([y,h])=>[y,Math.round(h)]))):'')
+  +box('Hours by genre (finished)',bars(top(e=>e.genres,8)))
+  +box('Hours by narrator (finished)',bars(top(e=>String((e.details||{}).narrator||'').split(/,\s+/).filter(Boolean),8)))
+  +box('Hours by author (finished)',bars(top(e=>String(e.creator||'').split(/,\s+/).filter(Boolean),8)))
+  +box('Audiobook lengths',bars(buckets));
+}
+const listenedIn=ents=>ents.filter(e=>isAudio(e)&&e.status==='finished');
+
+/* ---------- tidy up: genres and duplicates (flags: genre_manager, duplicates) ---------- */
+let gq='',gsel=new Set();
+const tidyOn=()=>feat('genre_manager')||feat('duplicates');
+const pushTo=(m,k,v)=>{(m.get(k)||m.set(k,[]).get(k)).push(v);};
+function genreCounts(){const m=new Map();db.entries.forEach(e=>e.genres.forEach(g=>m.set(g,(m.get(g)||0)+1)));return m;}
+function applyGenreMap(map){   // old name -> new name, or null to remove it
+  let n=0;const t=now();
+  db.entries.forEach(e=>{
+    if(!e.genres.some(g=>map.has(g)))return;
+    const next=[...new Set(e.genres.map(g=>map.has(g)?map.get(g):g).filter(Boolean))];
+    if(next.join('|')!==e.genres.join('|')){e.genres=next;e.updated=t;n++;}
+  });
+  return n;
+}
+function genreKey(g){
+  const k=g.toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]+/g,''),syn={scifi:'sciencefiction',sf:'sciencefiction'};
+  return (syn[k]||k).replace(/s$/,'');
+}
+function genreSuggestions(){
+  const counts=genreCounts(),groups=new Map();
+  for(const g of counts.keys())pushTo(groups,genreKey(g),g);
+  return [...groups.values()].filter(a=>a.length>1).map(a=>a.sort((x,y)=>counts.get(y)-counts.get(x)||x.localeCompare(y)));
+}
+function glistHTML(){
+  const counts=genreCounts(),q=gq.trim().toLowerCase();
+  const rows=[...counts.entries()].filter(([g])=>!q||g.includes(q)).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+  return rows.length?`<ul class="runs">${rows.map(([g,c])=>`<li><label style="display:inline-flex;gap:.5rem;align-items:center;font-weight:400"><input type="checkbox" style="width:auto;min-height:0" data-change="gsel" data-v="${esc(g)}"${gsel.has(g)?' checked':''}> ${esc(g)}</label> <span class="muted">${c}</span> <button type="button" class="btn small" data-act="gen-rename" data-v="${esc(g)}">Rename</button> <button type="button" class="btn small" data-act="gen-filter" data-v="${esc(g)}">Show books</button> <button type="button" class="btn small danger" data-act="gen-delete" data-v="${esc(g)}">Delete</button></li>`).join('')}</ul>`:'<p class="muted">No genres match.</p>';
+}
+function genresPanel(){
+  const counts=genreCounts(),sug=genreSuggestions();
+  return `<div class="panel"><h2>Genres (${counts.size})</h2>
+    <p class="muted">Renaming to a name that already exists merges the two. Genres are lowercase, and changes apply to every book that has them.</p>
+    ${sug.length?`<h3 style="margin:1rem 0 .4rem">Look like the same genre</h3><ul class="runs">${sug.slice(0,12).map(a=>`<li>${a.map(g=>`<b>${esc(g)}</b> <span class="muted">(${counts.get(g)})</span>`).join(' · ')} <button type="button" class="btn small" data-act="gen-merge-sug" data-v="${esc(JSON.stringify(a))}">Merge into “${esc(a[0])}”</button></li>`).join('')}</ul>`:''}
+    <label style="margin-top:1rem">Find a genre<input type="search" id="gq" value="${esc(gq)}" placeholder="Filter genres…"></label>
+    <p class="chips" style="margin:.7rem 0"><button type="button" class="btn small" id="gmerge" data-act="gen-merge-sel">Merge selected (${gsel.size})…</button><button type="button" class="btn small" data-act="gen-sel-none">Clear selection</button></p>
+    <div id="glist">${glistHTML()}</div></div>`;
+}
+const dupKey=g=>g.map(e=>e.id).sort().join('+');
+const normTitle=t=>String(t||'').toLowerCase().replace(/\(.*?\)|\[.*?\]/g,' ').replace(/&/g,' and ').replace(/\b(unabridged|abridged|a novel|audiobook)\b/g,' ').replace(/^(the|a|an)\s+/,'').replace(/[^a-z0-9]+/g,' ').trim();
+const creatorTokens=c=>new Set(String(c||'').toLowerCase().replace(/[^a-z\s]/g,' ').split(/\s+/).filter(w=>w.length>=3));
+const sharesCreator=(a,b)=>!a.size||!b.size||[...a].some(w=>b.has(w));
+function duplicateGroups(){
+  const E=db.entries,dismissed=new Set(db.dismissed||[]),parent=E.map((_,i)=>i);
+  const find=i=>{while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i];}return i;},union=(a,b)=>{parent[find(a)]=find(b);};
+  const ct=E.map(e=>creatorTokens(e.creator)),full=new Map(),pre=new Map();
+  E.forEach((e,i)=>{
+    const t=String(e.title),f=normTitle(t);if(f)pushTo(full,e.type+'|'+f,i);
+    if(t.includes(':')){const p=normTitle(t.split(':')[0]);if(p.length>=4)pushTo(pre,e.type+'|'+p,i);}
+  });
+  for(const idx of full.values())for(let a=0;a<idx.length;a++)for(let b=a+1;b<idx.length;b++)if(sharesCreator(ct[idx[a]],ct[idx[b]]))union(idx[a],idx[b]);
+  // "Kenobi" and "Kenobi: Star Wars Legends" are the same book; two different "Star Wars: …" titles are not.
+  for(const [k,pidx] of pre)for(const a of full.get(k)||[])for(const b of pidx)if(a!==b&&sharesCreator(ct[a],ct[b]))union(a,b);
+  const groups=new Map();E.forEach((e,i)=>pushTo(groups,find(i),e));
+  return [...groups.values()].filter(g=>g.length>1&&!dismissed.has(dupKey(g))).sort((a,b)=>b.length-a.length||a[0].title.localeCompare(b[0].title));
+}
+const keepScore=e=>(e.stars!=null?2:0)+(e.dates.length?2:0)+(e.notes?2:0)+(e.status!=='planned'?1:0)+(e.listIds||[]).length+(e.cover?1:0);
+const bestOf=g=>[...g].sort((a,b)=>keepScore(b)-keepScore(a)||a.created.localeCompare(b.created))[0];
+function dupCard(g){
+  const key=dupKey(g),best=bestOf(g);
+  return `<fieldset><legend>${esc(g[0].title)}</legend>${g.map(e=>`<label style="font-weight:400;display:flex;gap:.6rem;align-items:flex-start"><input type="radio" name="keep-${esc(key)}" value="${e.id}"${e===best?' checked':''} style="width:auto;min-height:0;margin-top:.45rem" aria-label="Keep this one" title="Keep this one"><input type="checkbox" name="inc-${esc(key)}" value="${e.id}" checked style="width:auto;min-height:0;margin-top:.45rem" aria-label="Merge this one in" title="Merge this one into the kept entry"><span><b>${esc(e.title)}</b>${e.creator?` <span class="muted">${esc(e.creator)}</span>`:''}<br><span class="muted small">${esc(statusLabel(e.status))}${e.stars!=null?' · ★'+e.stars:''}${e.dates.length?' · '+e.dates.length+' dated run'+(e.dates.length===1?'':'s'):''}${e.notes?' · has notes':''}${e.details&&e.details.narrator?' · read by '+esc(e.details.narrator):''} · added ${esc(fmtDate(e.created.slice(0,10)))} · <a href="#/entry/${e.id}">open</a></span></span></label>`).join('')}
+    <div class="chips"><button type="button" class="btn small primary" data-act="dup-merge" data-v="${esc(key)}">Merge into the selected one</button><button type="button" class="btn small" data-act="dup-dismiss" data-v="${esc(key)}">These are different</button></div></fieldset>`;
+}
+function duplicatesPanel(){
+  const gs=duplicateGroups();
+  return `<div class="panel"><h2>Possible duplicates (${gs.length})</h2><p class="muted">Same type and title with a matching author. The round button picks the one to keep and the tick box says which others are merged into it (untick any that are really a different book). Dates, ratings, notes, genres, lists and links are combined, and the merged ones are removed. If they are different editions, say so and they will not be suggested again.</p>
+    ${gs.length?gs.slice(0,40).map(dupCard).join(''):'<p class="muted">No duplicates found.</p>'}${gs.length>40?`<p class="muted small">Showing 40 of ${gs.length}.</p>`:''}</div>`;
+}
+function mergeEntries(keepId,removeIds){
+  const keep=byId(keepId),others=removeIds.map(byId).filter(o=>o&&o!==keep);if(!keep||!others.length)return 0;
+  const rank={finished:4,ongoing:3,paused:2,dropped:1,planned:0},t=now(),ids=new Set(others.map(o=>o.id));
+  for(const o of others){
+    keep.dates=[...keep.dates,...o.dates.filter(r=>!keep.dates.some(x=>x.start===r.start&&x.end===r.end))];
+    if(keep.stars==null)keep.stars=o.stars;
+    if(!keep.feeling)keep.feeling=o.feeling;if(!keep.food)keep.food=o.food;
+    if((rank[o.status]||0)>(rank[keep.status]||0))keep.status=o.status;
+    keep.genres=[...new Set([...keep.genres,...o.genres])];
+    keep.listIds=[...new Set([...(keep.listIds||[]),...(o.listIds||[])])];
+    keep.links=[...keep.links,...o.links.filter(l=>!keep.links.some(x=>x.to===l.to&&x.rel===l.rel))];
+    keep.details=keep.details||{};
+    for(const k of Object.keys(o.details||{}))if(keep.details[k]===undefined||keep.details[k]==='')keep.details[k]=o.details[k];
+    if(!keep.cover)keep.cover=o.cover||'';if(!keep.url)keep.url=o.url||'';if(!keep.franchiseId)keep.franchiseId=o.franchiseId||'';if(!keep.creator)keep.creator=o.creator||'';
+    if(o.notes&&!(keep.notes||'').includes(o.notes))keep.notes=(keep.notes?keep.notes+'\n\n':'')+o.notes;
+    if(o.created<keep.created)keep.created=o.created;
+  }
+  // anything that pointed at a removed entry now points at the one kept
+  const dedupeLinks=(e)=>{e.links=e.links.filter((l,i,a)=>l.to!==e.id&&a.findIndex(x=>x.to===l.to&&x.rel===l.rel)===i);};
+  db.entries.forEach(e=>{if(ids.has(e.id))return;let c=false;e.links.forEach(l=>{if(ids.has(l.to)){l.to=keep.id;c=true;}});if(c){dedupeLinks(e);e.updated=t;}});
+  keep.links=keep.links.map(l=>ids.has(l.to)?Object.assign({},l,{to:keep.id}):l);dedupeLinks(keep);
+  db.franchises.forEach(f=>{let c=false;f.timelines.forEach(tl=>{const n=tl.items.length;tl.items.forEach(i=>{if(ids.has(i.entryId)){i.entryId=keep.id;c=true;}});const seen=new Set();tl.items=tl.items.filter(i=>!seen.has(i.entryId)&&seen.add(i.entryId));if(tl.items.length!==n)c=true;});if(c)f.updated=t;});
+  keep.updated=t;removeEntries(ids);ids.forEach(id=>picked.delete(id));
+  return others.length;
+}
+function viewTidy(){
+  const parts=[];if(feat('genre_manager'))parts.push(genresPanel());if(feat('duplicates'))parts.push(duplicatesPanel());
+  return `<h1>Tidy up</h1>${parts.join('')||'<div class="panel empty">Nothing to tidy here.</div>'}`;
+}
+
+/* ---------- saved views (flag: saved_views) ---------- */
+let lastView=null;
+const filterOfView=v=>Object.assign(defaults(),JSON.parse(JSON.stringify(v.filter||{})));
+const stripEmpty=o=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>!(Array.isArray(v)&&!v.length)));
+const normF=f=>canon(Object.assign({},f,{include:stripEmpty(f.include),exclude:stripEmpty(f.exclude)}));
+const viewIsActive=v=>normF(filterOfView(v))===normF(F);
+const viewCount=v=>filteredWith(filterOfView(v)).length;
+const currentFilter=()=>JSON.parse(JSON.stringify({q:F.q,sort:F.sort,mode:F.mode,min:F.min,max:F.max,from:F.from,to:F.to,include:stripEmpty(F.include),exclude:stripEmpty(F.exclude)}));
+function viewsBar(){
+  if(!feat('saved_views'))return '';
+  const vs=[...db.views].sort(byName),active=vs.find(viewIsActive),allActive=normF(F)===normF(defaults()),base=lastView&&listViewById(lastView);
+  return `<div class="panel"><div class="chips" style="align-items:center"><span class="muted small">Views:</span><button type="button" class="chip${allActive?' sel':''}" data-act="view-all">All books</button>${vs.map(v=>`<button type="button" class="chip${active===v?' sel':''}" data-act="view-apply" data-id="${v.id}">${v.pinned?'📌 ':''}${esc(v.name)}</button>`).join('')}<button type="button" class="btn small" data-act="view-save">＋ Save current filters…</button></div>
+  ${active?`<div class="chips" style="margin-top:.6rem"><button type="button" class="btn small" data-act="view-pin" data-id="${active.id}">${active.pinned?'Unpin from Home':'Pin to Home'}</button><button type="button" class="btn small" data-act="view-rename" data-id="${active.id}">Rename</button><button type="button" class="btn small danger" data-act="view-del" data-id="${active.id}">Delete view</button></div>`
+   :base?`<div class="chips" style="margin-top:.6rem"><button type="button" class="btn small" data-act="view-update" data-id="${base.id}">Update “${esc(base.name)}” to these filters</button></div>`:''}</div>`;
+}
+const listViewById=id=>db.views.find(v=>v.id===id);
+function viewsStrip(){
+  if(!feat('saved_views'))return '';
+  const pins=db.views.filter(v=>v.pinned).sort(byName);if(!pins.length)return '';
+  return `<h2>Views</h2><div class="chips" style="margin-bottom:1rem">${pins.map(v=>`<button type="button" class="chip" data-act="view-apply" data-id="${v.id}">${esc(v.name)} <span class="muted">(${viewCount(v)})</span></button>`).join('')}</div>`;
+}
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
 
@@ -1237,7 +1429,7 @@ function route(){const h=location.hash.replace(/^#\/?/,'');const [p,a]=h.split('
 let lastKey='';
 function render(){
   const r=route();
-  if((GATED_ROUTES[r.p]&&!feat(GATED_ROUTES[r.p]))||(r.p==='admin'&&!sync.isAdmin)){location.replace('#/');return;}
+  if((GATED_ROUTES[r.p]&&!feat(GATED_ROUTES[r.p]))||(r.p==='admin'&&!sync.isAdmin)||(r.p==='tidy'&&!tidyOn())){location.replace('#/');return;}
   document.querySelectorAll('nav.main a').forEach(a=>{if(a.dataset.nav===r.p||(r.p==='entry'&&a.dataset.nav==='library')||(r.p==='franchise'&&a.dataset.nav==='franchises')||(r.p==='list'&&a.dataset.nav==='lists'))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   let html='';
   switch(r.p){
@@ -1251,6 +1443,7 @@ function render(){
     case 'settings':html=viewSettings();break;
     case 'admin':html=viewAdmin();break;
     case 'lists':html=viewLists();break;
+    case 'tidy':html=viewTidy();break;
     case 'list':html=viewList(r.a);break;
     case 'shared':html=viewShared(r.a);break;
     default:html='<div class="panel empty"><h2>Lost in the stacks</h2><p><a href="#/">Back home</a></p></div>';
@@ -1283,8 +1476,10 @@ function viewHome(){
     ${qs('status','planned','planned',E.filter(e=>e.status==='planned').length)}
     ${feat('wrapped')?`<a class="stat" href="#/wrapped"><b>${finThisYear}</b>finished in ${yr}</a>`:`<div class="stat" style="cursor:default"><b>${finThisYear}</b>finished in ${yr}</div>`}
   </div>
+  ${viewsStrip()}
   <h2>Right now</h2>
   ${ongoing.length?`<div class="grid">${ongoing.map(withProgress).join('')}</div>`:'<p class="muted">Nothing marked as in progress.</p>'}
+  ${nextUpSection()}
   <div class="divider">✦ ✦ ✦</div>
   <h2>Recently logged</h2><div class="grid">${recent.map(cardHTML).join('')}</div>
   ${planned.length?`<div class="divider">☾</div><h2>On the to-do shelf</h2><div class="grid">${planned.map(withProgress).join('')}</div>`:''}`;
@@ -1300,7 +1495,8 @@ function matches(e,f){
   if((f.min!==''||f.max!=='')&&(e.stars==null||f.min!==''&&e.stars<+f.min||f.max!==''&&e.stars>+f.max))return false;
   return !(f.from||f.to)||years.some(y=>(!f.from||y>=+f.from)&&(!f.to||y<=+f.to));
 }
-function filtered(){
+function filtered(){return filteredWith(F);}
+function filteredWith(F){   // F here is the filter being applied (the parameter shadows the page's current one)
   const q=F.q.trim().toLowerCase();
   const list=db.entries.filter(e=>{
     if(!matches(e,F))return false;
@@ -1342,7 +1538,7 @@ function viewLibrary(){
   }).join('');
   const range=(k,l,type)=>'<label>'+l+'<input type="number" '+(type==='stars'?'min="0" max="5" step=".5"':'min="1" max="9999"')+' data-change="filter" data-k="'+k+'" value="'+esc(F[k])+'"></label>';
   for(const [key,label] of Object.entries({q:'Search',min:'Minimum stars',max:'Maximum stars',from:'From year',to:'To year'}))if(F[key]!=='')chips.push('<button class="chip" data-act="unrange" data-k="'+key+'">'+label+' '+esc(F[key])+' ×</button>');
-  return `<h1>Library</h1><div class="panel"><details data-group="panel" ${opened.has('panel')?'open':''}><summary>Sort and filter</summary>
+  return `<h1>Library</h1>${viewsBar()}<div class="panel"><details data-group="panel" ${opened.has('panel')?'open':''}><summary>Sort and filter</summary>
   <label>Included genres and years<select data-change="filter" data-k="mode">${opt('all','Match all',F.mode)}${opt('any','Match any',F.mode)}</select></label>
   ${groups}<div class="filters">${range('min','Minimum stars','stars')}${range('max','Maximum stars','stars')}${range('from','From year')}${range('to','To year')}
     <label>Sort by<select data-change="filter" data-k="sort">${opt('recent','Most recent activity',F.sort)}${opt('added','Date added',F.sort)}${opt('title','Title A–Z',F.sort)}${opt('rating','Stars (high first)',F.sort)}</select></label>
@@ -1375,6 +1571,7 @@ function viewEntry(id){
     <p style="margin-top:1rem"><button class="btn" data-act="edit" data-id="${e.id}">✎ Edit</button> <button class="btn danger" data-act="delete" data-id="${e.id}">Delete</button></p>
   </div>
   ${feat('progress')&&(progressButtons(e)||progressBar(e))?`<div class="panel"><h2>Progress</h2>${progressText(e)?`<p style="margin:0">${esc(progressText(e))}</p>`:''}${progressBar(e)}${progressButtons(e)}</div>`:''}
+  ${entrySeries(e)}
   ${entryLists(e)}
   ${runs.length?`<div class="panel"><h2>Dates</h2><ul class="runs">${runs.map((r,i)=>`<li><b>${runs.length>1?`Run ${i+1}: `:''}</b>${r.start?fmtDate(r.start):'?'}${r.end?` → ${fmtDate(r.end)}`:(r.start?' → …':'')}${r.note?` <span class="muted">— ${esc(r.note)}</span>`:''}</li>`).join('')}</ul></div>`:''}
   ${fieldRows?`<div class="panel"><h2>Details</h2><dl class="kv">${fieldRows}</dl></div>`:''}
@@ -1395,7 +1592,8 @@ function viewFranchises(){
 function viewFranchise(id){
   const f=frById(id);
   if(!f)return '<div class="panel empty"><h2>Franchise not found</h2><p><a href="#/franchises">Back</a></p></div>';
-  const mine=db.entries.filter(e=>e.franchiseId===f.id).sort((a,b)=>activity(a).localeCompare(activity(b)));
+  let mine=db.entries.filter(e=>e.franchiseId===f.id).sort((a,b)=>activity(a).localeCompare(activity(b)));
+  if(feat('next_up')){const o=franchiseOrder(f.id);if(o)mine=o;}
   const others=db.entries.filter(e=>e.franchiseId!==f.id).sort(byTitle);
   const addOpts=`<option value="">— add an entry —</option>${mine.length?`<optgroup label="In this franchise">${mine.map(e=>opt(e.id,TYPES[e.type].icon+' '+e.title,'')).join('')}</optgroup>`:''}<optgroup label="Everything else">${others.map(e=>opt(e.id,TYPES[e.type].icon+' '+e.title,'')).join('')}</optgroup>`;
   const tl=f.timelines.map(t=>{
@@ -1417,11 +1615,11 @@ function viewFranchise(id){
     <textarea data-change="fr-notes" data-f="${f.id}" placeholder="Lore, reading order thoughts, favourite characters… Use [[Entry title]] to link to an entry.">${esc(f.notes)}</textarea>
     ${f.notes?`<details style="margin-top:.6rem"><summary>Preview with links</summary><div class="notes">${renderNotes(f.notes)}</div></details>`:''}</div>
   <h2>Entries (${mine.length})</h2>
-  ${mine.length?`<div class="grid">${mine.map(cardHTML).join('')}</div>`:'<p class="muted">Nothing here yet. Set the franchise when logging an entry.</p>'}
+  ${franchiseCards(mine,f)}
   <div class="divider">✦ ✦ ✦</div>
   <h2>Timelines</h2>
   <p class="muted">Release order, chronological order, machete order, in-universe dates… make as many as you like and arrange the entries.</p>
-  ${tl}
+  ${feat('next_up')&&franchiseOrder(f.id)?`<p><button type="button" class="btn" data-act="tl-from-series" data-f="${f.id}">Create or refresh a “Series order” timeline</button></p>`:''}${tl}
   <div class="panel"><label>New timeline<input type="text" id="tl-new" list="tl-suggest" placeholder="e.g. Chronological order"></label>
   <datalist id="tl-suggest"><option value="Release order"><option value="Chronological order"><option value="Machete order"><option value="In-universe order"></datalist>
   <p style="margin-bottom:0"><button class="btn" data-act="tl-create" data-f="${f.id}">＋ Create timeline</button></p></div>`;
@@ -1463,6 +1661,7 @@ function viewStats(){
     ${genres.length?box('Top genres',bars(genres)):''}${frs.length?box('Biggest franchises',bars(frs)):''}
     ${years.length?box('Entries by year',bars(years)):''}
     ${feat('stats_plus')?statsPlusHTML():''}
+    ${feat('listening_stats')?listeningHTML():''}
   </div>`;
 }
 function viewWrapped(arg){
@@ -1498,6 +1697,7 @@ function viewWrapped(arg){
     ${genres.length?card('☾ Favourite genres',`<ol>${genres.map(([g,c])=>`<li>${esc(g)} (${c})</li>`).join('')}</ol>`):''}
     ${frs.length?card('❦ Franchises you lived in',`<ol>${frs.map(([g,c])=>`<li>${esc(g)} (${c})</li>`).join('')}</ol>`):''}
     ${pages?card('📖 Pages finished',`<div class="big">${num(pages)}</div>`):''}
+    ${(()=>{const L=listenedIn(ents),h=L.reduce((t,e)=>t+hrs(e),0);return feat('listening_stats')&&L.length?card('🎧 Hours listened',`<div class="big">${num(h)}</div><div class="muted">across ${L.length} audiobook${L.length===1?'':'s'}</div>`):'';})()}
     ${hours?card('🎮 Game hours (total on those games)',`<div class="big">${num(hours)}</div>`):''}
     ${rooms.length?card('🗝️ Escape rooms',`<div class="big">${roomsYes}/${rooms.length}</div><div class="muted">escaped</div>`):''}
   </div>
@@ -1657,10 +1857,11 @@ function parseLibrary(text){
   const str=v=>typeof v==='string';
   const stamp=v=>str(v)&&Number.isFinite(Date.parse(v));
   const list=(v,test)=>Array.isArray(v)&&v.every(test);
-  if(!obj(data)||data.version!==1||!Array.isArray(data.entries)||!Array.isArray(data.franchises)||!obj(data.deleted||{})||(data.lists!=null&&!Array.isArray(data.lists)))fail();
-  data.lists=data.lists||[];
+  if(!obj(data)||data.version!==1||!Array.isArray(data.entries)||!Array.isArray(data.franchises)||!obj(data.deleted||{})||(data.lists!=null&&!Array.isArray(data.lists))||(data.views!=null&&!Array.isArray(data.views))||(data.dismissed!=null&&!(Array.isArray(data.dismissed)&&data.dismissed.length<=1000&&data.dismissed.every(x=>str(x)&&x.length<=1000))))fail();
+  data.lists=data.lists||[];data.views=data.views||[];
+  const cleanFilter=f=>{const o=defaults();if(!obj(f))return o;for(const k of ['q','sort','mode','min','max','from','to'])if(str(f[k]))o[k]=f[k];for(const side of ['include','exclude'])if(obj(f[side]))for(const [k,v] of Object.entries(f[side]))if(/^[a-z]+$/.test(k)&&Array.isArray(v)&&v.every(str))o[side][k]=v;return o;};
   const seen=new Set();
-  for(const r of [...data.entries,...data.franchises,...data.lists]){
+  for(const r of [...data.entries,...data.franchises,...data.lists,...data.views]){
     if(!obj(r)||!id(r.id)||seen.has(r.id)||!stamp(r.updated)||!stamp(r.created))fail();
     seen.add(r.id);r.updated=new Date(r.updated).toISOString();r.created=new Date(r.created).toISOString();
   }
@@ -1675,6 +1876,7 @@ function parseLibrary(text){
       (e.stars!=null&&!STAR_STEPS.includes(e.stars)))fail();
   }
   for(const l of data.lists){if(!str(l.name)||(l.notes!=null&&!str(l.notes)))fail();}
+  for(const v of data.views){if(!str(v.name)||v.name.length>80||(v.pinned!=null&&typeof v.pinned!=='boolean'))fail();v.filter=cleanFilter(v.filter);}
   for(const f of data.franchises){
     if(!str(f.name)||(f.notes!=null&&!str(f.notes))||!list(f.timelines||[],t=>obj(t)&&id(t.id)&&str(t.name)&&list(t.items,i=>obj(i)&&id(i.id)&&id(i.entryId)&&(i.note==null||str(i.note)))))fail();
   }
@@ -1683,7 +1885,7 @@ function parseLibrary(text){
 function dismissImport(){pending=null;$('#overlay').hidden=true;$('#overlay').innerHTML='';}
 function preview(text){
   try{const source=parseLibrary(text);pending=source;
-    const records=[...source.entries.map(e=>[e.id,e.title]),...source.franchises.map(f=>[f.id,'Franchise · '+f.name]),...Object.keys(source.deleted).map(k=>['del:'+k,'Deletion · '+(byId(k)?.title||frById(k)?.name||k)])];
+    const records=[...source.entries.map(e=>[e.id,e.title]),...source.franchises.map(f=>[f.id,'Franchise · '+f.name]),...source.lists.map(l=>[l.id,'List · '+l.name]),...source.views.map(v=>[v.id,'View · '+v.name]),...Object.keys(source.deleted).map(k=>['del:'+k,'Deletion · '+(byId(k)?.title||frById(k)?.name||k)])];
     const o=$('#overlay');o.hidden=false;
     o.innerHTML='<div class="modal" role="dialog"><h2>Import library</h2><p>Select the records to merge. Newer edits win for the same record.</p><button class="btn" id="pickAll">Select all</button> <button class="btn" id="pickNone">Select none</button><div id="picks">'+records.map(([k,n])=>'<label><input type="checkbox" checked value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</div><p id="counts" role="status"></p><button class="btn" id="dropImport">Cancel</button> <button class="btn primary" id="applyImport">Apply merge</button></div>';
     let result;
@@ -1691,10 +1893,12 @@ function preview(text){
       const selected=new Set([...o.querySelectorAll('#picks input:checked')].map(el=>el.value));
       const entries=source.entries.filter(e=>selected.has(e.id));
       const franchises=source.franchises.filter(f=>selected.has(f.id)||entries.some(e=>e.franchiseId===f.id&&!frById(f.id)));
+      const lists=source.lists.filter(l=>selected.has(l.id)||entries.some(e=>(e.listIds||[]).includes(l.id)&&!listById(l.id)));
+      const views=source.views.filter(v=>selected.has(v.id));
       const deleted=Object.fromEntries(Object.entries(source.deleted).filter(([k])=>selected.has('del:'+k)));
-      result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,deleted})));
-      const before=new Map([...db.entries,...db.franchises,...db.lists].map(r=>[r.id,canon(r)]));
-      const after=[...result.entries,...result.franchises,...result.lists];const added=after.filter(r=>!before.has(r.id)).length;
+      result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,lists,views,dismissed:source.dismissed,deleted})));
+      const before=new Map([...db.entries,...db.franchises,...db.lists,...db.views].map(r=>[r.id,canon(r)]));
+      const after=[...result.entries,...result.franchises,...result.lists,...result.views];const added=after.filter(r=>!before.has(r.id)).length;
       const unchanged=after.filter(r=>before.get(r.id)===canon(r)).length;
       $('#counts').textContent=added+' added · '+(after.length-added-unchanged)+' updated · '+unchanged+' retained · '+(before.size+added-after.length)+' removed. Required franchises are included.';
       $('#applyImport').disabled=!selected.size;
@@ -1707,7 +1911,7 @@ function preview(text){
   }catch(e){dismissImport();toast('Import failed: '+e.message);}
 }
 function mergeData(a,b){
-  const out={version:1,entries:[],franchises:[],lists:[],deleted:{}};
+  const out={version:1,entries:[],franchises:[],lists:[],views:[],dismissed:[],deleted:{}};
   const del={};
   for(const src of [a.deleted||{},b.deleted||{}])for(const k in src)if(!del[k]||src[k]>del[k])del[k]=src[k];
   const pick=(x,y)=>{const m=new Map();for(const r of [...x,...y]){const o=m.get(r.id);if(!o||(r.updated||'')>(o.updated||''))m.set(r.id,r);}
@@ -1730,6 +1934,8 @@ function mergeData(a,b){
     if(lseen.has(k)){const kp=lseen.get(k);lremap[l.id]=kp.id;if(l.notes&&!(kp.notes||'').includes(l.notes))kp.notes=(kp.notes?kp.notes+'\n\n':'')+l.notes;kp.updated=now();del[l.id]=now();}
     else{lseen.set(k,l);lkeep.push(l);}}
   out.lists=lkeep;
+  out.views=pick(a.views||[],b.views||[]);
+  out.dismissed=[...new Set([...(a.dismissed||[]),...(b.dismissed||[])])].slice(-500);
   out.franchises=keep;out.deleted=del;
   const lids=new Set(lkeep.map(l=>l.id));
   out.entries.forEach(e=>{const next=[...new Set((e.listIds||[]).map(i=>lremap[i]||i).filter(i=>lids.has(i)))];if(next.join()!==(e.listIds||[]).join()){e.listIds=next;e.updated=now();}});
@@ -1754,7 +1960,7 @@ function updateChrome(){
   if(b){
     b.textContent=sync.token&&!/^Save failed/.test(storageStatus)?sync.user+' · '+(syncStatus||'Signed in').split(/\.\s/)[0]:storageStatus;b.title='Open account and file settings';
   }
-  document.querySelectorAll('nav.main a').forEach(a=>{const k=GATED_ROUTES[a.dataset.nav];a.hidden=a.dataset.nav==='admin'?!sync.isAdmin:(!!k&&!feat(k));});
+  document.querySelectorAll('nav.main a').forEach(a=>{const k=GATED_ROUTES[a.dataset.nav];a.hidden=a.dataset.nav==='admin'?!sync.isAdmin:a.dataset.nav==='tidy'?!tidyOn():(!!k&&!feat(k));});
   const q=$('#q');if(q&&document.activeElement!==q&&q.value!==F.q)q.value=F.q;
 }
 
@@ -1823,6 +2029,22 @@ document.addEventListener('click',ev=>{
     case 'adm-delete':(async()=>{const n=prompt('This deletes the account "'+el.dataset.name+'" and its library, versions and sign-ins, and cannot be undone.\n\nType the username to confirm:');
       if(n===null)return;if(n.trim().toLowerCase()!==el.dataset.name){toast('That did not match. Nothing was deleted.');return;}
       const r=await adminCall('DELETE','/api/admin/users/'+el.dataset.id,undefined,'Deleted "'+el.dataset.name+'".');if(r)loadAdmin();})();break;
+    case 'tl-from-series':{const f=frById(el.dataset.f),o=f&&franchiseOrder(f.id);if(!o)break;const t=f.timelines.find(x=>x.name==='Series order');const items=o.map(e=>{const old=t&&t.items.find(i=>i.entryId===e.id);return {id:old?old.id:uid(),entryId:e.id,note:old?old.note:((e.details||{}).series||'')};});if(t)t.items=items;else f.timelines.push({id:uid(),name:'Series order',items});f.updated=now();changed();toast('“Series order” timeline updated');break;}
+    case 'gen-rename':{const nn=prompt('Rename “'+v+'” to…',v),t=(nn||'').trim().toLowerCase();if(!t||t===v)break;if(genreCounts().has(t)&&!confirm('“'+t+'” already exists. Merge “'+v+'” into it?'))break;const n=applyGenreMap(new Map([[v,t]]));gsel.delete(v);toast('Updated '+plural(n,'book'));changed();break;}
+    case 'gen-delete':{const c=genreCounts().get(v)||0;if(!confirm('Remove the genre “'+v+'” from '+plural(c,'book')+'? The books stay.'))break;const n=applyGenreMap(new Map([[v,null]]));gsel.delete(v);toast('Removed from '+plural(n,'book'));changed();break;}
+    case 'gen-merge-sug':{const list=JSON.parse(v),target=list[0],n=applyGenreMap(new Map(list.slice(1).map(g=>[g,target])));list.forEach(g=>gsel.delete(g));toast('Merged into “'+target+'” ('+plural(n,'book')+')');changed();break;}
+    case 'gen-merge-sel':{if(gsel.size<2){toast('Tick at least two genres first');break;}const counts=genreCounts(),sel=[...gsel].sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0)),nn=prompt('Merge '+sel.length+' genres into…',sel[0]),t=(nn||'').trim().toLowerCase();if(!t)break;const n=applyGenreMap(new Map(sel.filter(g=>g!==t).map(g=>[g,t])));gsel.clear();toast('Merged into “'+t+'” ('+plural(n,'book')+')');changed();break;}
+    case 'gen-sel-none':gsel.clear();render();break;
+    case 'gen-filter':F=defaults();F.include.genre=[v];lastView=null;location.hash='#/library';break;
+    case 'dup-merge':{const radio=document.querySelector('input[name="keep-'+v+'"]:checked');if(!radio)break;const keepId=radio.value,keep=byId(keepId),others=[...document.querySelectorAll('input[name="inc-'+v+'"]:checked')].map(x=>x.value).filter(i=>i!==keepId);if(!keep)break;if(!others.length){toast('Tick at least one other entry to merge in');break;}if(!confirm('Merge '+others.length+' other entr'+(others.length===1?'y':'ies')+' into “'+keep.title+'”? The others are removed'+(sync.token&&feat('version_history')?' (Version history can bring them back).':'.')))break;const n=mergeEntries(keepId,others);toast('Merged '+n+' duplicate'+(n===1?'':'s'));changed();break;}
+    case 'dup-dismiss':db.dismissed=[...(db.dismissed||[]),v].slice(-500);changed();break;
+    case 'view-all':F=defaults();lastView=null;render();break;
+    case 'view-apply':{const w=listViewById(el.dataset.id);if(!w)break;F=filterOfView(w);lastView=w.id;if(route().p!=='library')location.hash='#/library';else render();break;}
+    case 'view-save':{const nm=prompt('Name this view?');if(!nm||!nm.trim())break;const name=nm.trim().slice(0,80),ex=db.views.find(x=>x.name.toLowerCase()===name.toLowerCase());if(ex){if(!confirm('A view called “'+ex.name+'” already exists. Replace its filters?'))break;ex.filter=currentFilter();ex.updated=now();lastView=ex.id;}else{const w={id:uid(),name,filter:currentFilter(),pinned:false,created:now(),updated:now()};db.views.push(w);lastView=w.id;}changed();toast('View saved');break;}
+    case 'view-update':{const w=listViewById(el.dataset.id);if(!w)break;w.filter=currentFilter();w.updated=now();changed();toast('View updated');break;}
+    case 'view-pin':{const w=listViewById(el.dataset.id);if(!w)break;w.pinned=!w.pinned;w.updated=now();changed();break;}
+    case 'view-rename':{const w=listViewById(el.dataset.id),nm=w&&prompt('New name?',w.name);if(nm&&nm.trim()){w.name=nm.trim().slice(0,80);w.updated=now();changed();}break;}
+    case 'view-del':{const w=listViewById(el.dataset.id);if(w&&confirm('Delete the view “'+w.name+'”? Your books are not affected.')){db.views=db.views.filter(x=>x.id!==w.id);db.deleted[w.id]=now();if(lastView===w.id)lastView=null;changed();}break;}
     case 'preview':openPreview(el.dataset.id);break;
     case 'preview-close':closePreview();break;
     case 'qstar':setStars(el.dataset.id,el.dataset.v);break;
@@ -1860,6 +2082,7 @@ document.addEventListener('change',ev=>{
     const enabled=el.value===''?null:el.value==='on';
     (async()=>{const r=c==='adm-flag'?await adminCall('PUT','/api/admin/users/'+el.dataset.u+'/features',{flag:el.dataset.f,enabled}):await adminCall('PUT','/api/admin/features/default',{flag:el.dataset.f,enabled});
       if(r){adm.note='Saved. Accounts pick this up at their next sync (about a minute).';if(sync.token)syncNow();loadAdmin();}})();}
+  else if(c==='gsel'){if(el.checked)gsel.add(el.dataset.v);else gsel.delete(el.dataset.v);const bt=$('#gmerge');if(bt)bt.textContent='Merge selected ('+gsel.size+')…';}
   else if(c==='sel'){const id=el.dataset.id;if(el.checked)picked.add(id);else picked.delete(id);const card=el.closest('.lcard');if(card)card.classList.toggle('picked',el.checked);updateBulkBar();}
   else if(c==='bulk-status'){if(el.value)bulkStatus(el.value);}
   else if(c==='bulk-list'){if(el.value)bulkList(el.value);}
@@ -1869,7 +2092,7 @@ document.addEventListener('change',ev=>{
   else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
 });
 document.addEventListener('submit',ev=>{if(ev.target.id==='editor'){ev.preventDefault();saveEditor();}else if(ev.target.id==='authform'){ev.preventDefault();submitAuth(ev.target);}else if(ev.target.id==='pwform'){ev.preventDefault();changePassword(ev.target);}});
-document.addEventListener('input',ev=>{if(ev.target.id==='quick'){const p=$('#quickprev');if(p)p.textContent=quickSummary(parseQuick(ev.target.value));}});
+document.addEventListener('input',ev=>{if(ev.target.id==='gq'){gq=ev.target.value;const l=$('#glist');if(l)l.innerHTML=glistHTML();}if(ev.target.id==='quick'){const p=$('#quickprev');if(p)p.textContent=quickSummary(parseQuick(ev.target.value));}});
 document.addEventListener('keydown',ev=>{
   if(ev.target.id==='quick'&&ev.key==='Enter'){ev.preventDefault();addQuick();return;}
   const mod=ev.ctrlKey||ev.metaKey,t=ev.target,typing=!!(t.closest&&t.closest('input,textarea,select,[contenteditable]'));

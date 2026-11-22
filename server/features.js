@@ -23,7 +23,12 @@ const FLAG_DEFAULTS = {
   stats_plus: false,      // Year-over-year, ratings by genre, pace chart, wrapped as an image
   import_trackers: false, // Import Goodreads, StoryGraph and Letterboxd exports (and generic CSV)
   sharing: false,         // Read-only share links for a franchise, a list or the whole library
-  library_actions: false  // Library page: quick stars and Start/Finish, tap-to-filter chips, multi-select, preview panel
+  library_actions: false, // Library page: quick stars and Start/Finish, tap-to-filter chips, multi-select, preview panel
+  next_up: false,         // Next unread book per series on Home, series order on franchise pages
+  genre_manager: false,   // Tidy up: rename, merge and delete genres
+  saved_views: false,     // Named filter sets on the Library page, pinnable to Home
+  listening_stats: false, // Audiobook hours on the Stats page and in Year wrapped
+  duplicates: false       // Tidy up: find and merge duplicate entries
 };
 
 const SCHEMA = `
