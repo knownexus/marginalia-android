@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-X87a7ht72Vg3smKUujHNzrGUJfSUX1/EiJl50ju3dpw='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-7uhk10HIBxBFR1rQy+IW/kJeYa/wIorYSLeRZ+FXpkI='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -260,6 +260,13 @@ const TYPES={
     {k:'narrationRating',label:'Narration rating (listeners, of 5)',kind:'number',flag:'import_trackers'},
     {k:'words',label:'Word count',kind:'number',flag:'import_trackers'},
     {k:'chapters',label:'Chapters',kind:'number',flag:'import_trackers'},
+    {k:'ao3Rating',label:'AO3 rating',kind:'text',flag:'ao3_fetch'},
+    {k:'kudos',label:'AO3 kudos',kind:'number',flag:'ao3_fetch'}]},
+  fanfic:{label:'Fanfiction',icon:'📝',creator:'Author',fields:[
+    {k:'site',label:'Site',kind:'select',options:['AO3','fanfiction.net','Wattpad','Other']},
+    {k:'words',label:'Word count',kind:'number'},
+    {k:'chapters',label:'Chapters',kind:'number'},
+    {k:'currentChapter',label:'Current chapter',kind:'number'},
     {k:'ao3Rating',label:'AO3 rating',kind:'text',flag:'ao3_fetch'},
     {k:'kudos',label:'AO3 kudos',kind:'number',flag:'ao3_fetch'}]},
   tv:{label:'TV show',icon:'📺',creator:'Creator',fields:[
@@ -738,7 +745,7 @@ function noticesPanel(){
 }
 
 /* ---------- quick add (flag: quick_add) ---------- */
-const Q_TYPES={book:'book',books:'book',film:'film',movie:'film',tv:'tv',show:'tv',series:'tv',game:'game',online:'online',play:'play',theatre:'play',theater:'play',escape:'escape',room:'escape'};
+const Q_TYPES={book:'book',books:'book',fanfic:'fanfic',fanfiction:'fanfic',fic:'fanfic',fanfics:'fanfic',ao3:'fanfic',film:'film',movie:'film',tv:'tv',show:'tv',series:'tv',game:'game',online:'online',play:'play',theatre:'play',theater:'play',escape:'escape',room:'escape'};
 const Q_STATUS={planned:'planned',plan:'planned',todo:'planned',want:'planned',wishlist:'planned',ongoing:'ongoing',reading:'ongoing',watching:'ongoing',playing:'ongoing',started:'ongoing',current:'ongoing','in progress':'ongoing',
   finished:'finished',done:'finished',read:'finished',watched:'finished',played:'finished',completed:'finished',paused:'paused',hold:'paused','on hold':'paused',dropped:'dropped',dnf:'dropped',abandoned:'dropped'};
 function parseQuick(text){
@@ -918,7 +925,7 @@ function reviewAo3(w){   // resolves to {tags,franchiseName} or null when cancel
 }
 /* Fields taken from the AO3 page, ready to merge into a draft or an entry. */
 function ao3Fields(w){
-  const d={format:'Fanfic'};
+  const d={site:'AO3'};
   if(w.words!=null)d.words=w.words;if(w.chapters!=null)d.chapters=w.chapters;if(w.rating)d.ao3Rating=w.rating;if(w.kudos!=null)d.kudos=w.kudos;
   return d;
 }
@@ -930,7 +937,7 @@ async function ao3FillEditor(){
   toast('Fetching from AO3…');
   let w;try{w=await fetchAo3(id);}catch(e){toast(e.message);return;}
   toast('');const sel=await reviewAo3(w);if(!sel||!ed)return;
-  syncDraft();ed.type='book';ed.title=w.title;ed.creator=w.author;ed.url=w.url;
+  syncDraft();ed.type='fanfic';ed.title=w.title;ed.creator=w.author;ed.url=w.url;
   if(sel.franchiseName)ed.franchise=sel.franchiseName;
   ed.genres=[...new Set([...ed.genres.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean),...sel.tags])].join(', ');
   ed.details=Object.assign({},ed.details,ao3Fields(w));ed.notes=withSummary(ed.notes,w.summary);
@@ -942,7 +949,7 @@ async function addQuickAo3(id,rest){
   const q=parseQuick('x'+(rest?', '+rest:''))||{title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],franchise:'',list:'',date:'',notes:[]},t=now(),dates=[];
   if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});else if(q.status==='ongoing')dates.push({start:q.date||today(),end:'',note:''});
   const fr=sel.franchiseName||q.franchise;
-  const rec={id:'ao3-'+id,type:'book',title:w.title,creator:w.author,franchiseId:fr?ensureFranchise(fr):'',genres:[...new Set([...q.genres,...sel.tags])],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:ao3Fields(w),notes:withSummary(q.notes.join('\n'),w.summary),links:[],cover:'',url:w.url,listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t};
+  const rec={id:'ao3-'+id,type:'fanfic',title:w.title,creator:w.author,franchiseId:fr?ensureFranchise(fr):'',genres:[...new Set([...q.genres,...sel.tags])],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:ao3Fields(w),notes:withSummary(q.notes.join('\n'),w.summary),links:[],cover:'',url:w.url,listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t};
   const i=db.entries.findIndex(e=>e.id===rec.id);
   if(i>=0){if(!confirm('You already have this story. Update it from AO3?'))return;const prev=db.entries[i];rec.stars=q.stars!=null?q.stars:prev.stars;rec.status=prev.status;rec.dates=prev.dates;rec.listIds=prev.listIds;rec.created=prev.created;rec.cover=prev.cover;rec.notes=withSummary(prev.notes,w.summary);rec.genres=[...new Set([...prev.genres,...sel.tags])];db.entries[i]=Object.assign({},prev,rec);}
   else db.entries.push(rec);
@@ -966,7 +973,8 @@ async function bulkAo3(){   // fills in the selected stories that have an AO3 li
       if(!e.creator)e.creator=w.author;
       if(!e.franchiseId&&sel.franchiseName)e.franchiseId=ensureFranchise(sel.franchiseName);
       e.genres=[...new Set([...e.genres,...sel.tags])];
-      e.details=Object.assign({},ao3Fields(w),e.details);e.details.format=e.details.format||'Fanfic';
+      if(e.type==='book'){e.type='fanfic';delete e.details.format;}   // an AO3 story is fanfiction
+      e.details=Object.assign({},ao3Fields(w),e.details);
       e.notes=withSummary(e.notes,w.summary);e.updated=now();ok++;
     }
   }finally{ao3Busy=false;}
@@ -974,6 +982,18 @@ async function bulkAo3(){   // fills in the selected stories that have an AO3 li
   const msg='Filled in '+plural(ok,'story')+(all.length>LIMIT?' (first '+LIMIT+' of '+all.length+'; run it again for the rest)':'')+(skippedTags?'. '+plural(skippedTags,'new tag')+' left out. Fetch a story from the editor to review new tags':'')+(err?'. Stopped: '+err:'');
   if(ok)offerUndo(msg,snap);else toast(msg||err);
 }
+const isFicBook=e=>e.type==='book'&&((e.details||{}).format==='Fanfic'||/archiveofourown\.(org|com|net|gay)\/works\/|fanfiction\.net\/s\//i.test(e.url||''));
+function fanficMovePanel(){
+  const n=db.entries.filter(isFicBook).length;if(!n)return '';
+  return `<div class="panel"><h2>Fanfiction</h2><p>${plural(n,'book')} look like fanfiction (their format is “Fanfic”, or they link to AO3 or fanfiction.net). Fanfiction is its own type, with word count, chapters and site instead of pages.</p><button type="button" class="btn" data-fanfic="move">Move ${n} to Fanfiction</button></div>`;
+}
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-fanfic]');if(!b)return;
+  const es=db.entries.filter(isFicBook);if(!es.length)return;
+  const snap=undoSnap(),t=now();
+  for(const e of es){e.type='fanfic';const d=e.details||(e.details={});delete d.format;delete d.pages;delete d.currentPage;if(!d.site)d.site=/archiveofourown|ao3/i.test(e.url||'')?'AO3':/fanfiction\.net/i.test(e.url||'')?'fanfiction.net':'Other';e.updated=t;}
+  changed();offerUndo('Moved '+plural(es.length,'book')+' to Fanfiction',snap);
+});
 const ao3EditorBox=()=>ao3On()?`<fieldset><legend>Fetch from AO3</legend><div class="row2" style="margin-bottom:0"><label>AO3 link<input id="ao3link" type="text" inputmode="url" autocapitalize="none" spellcheck="false" value="${esc(ao3IdOf(ed.url)?ed.url:'')}" placeholder="https://archiveofourown.org/works/…"></label><div style="align-self:end"><button type="button" class="btn" data-ao3="editor-fetch">Fetch details</button></div></div><p class="muted small" style="margin:.3rem 0 0">Fills in the title, author, word count, rating, fandom, tags and summary. You choose which tags to keep before anything changes.</p></fieldset>`:'';
 function tagRulesPanel(){
   if(!feat('ao3_fetch'))return '';
@@ -1088,8 +1108,9 @@ function nextEpisode(t){
 }
 function progressBar(e){
   const d=e.details||{};
-  if(!feat('progress')||e.type!=='book'||!(Number(d.pages)>0))return '';
-  const pct=Math.min(100,Math.round((Number(d.currentPage)||0)/Number(d.pages)*100));
+  const fic=e.type==='fanfic'&&Number(d.chapters)>0,bk=e.type==='book'&&Number(d.pages)>0;
+  if(!feat('progress')||!(fic||bk))return '';
+  const pct=Math.min(100,Math.round(fic?(Number(d.currentChapter)||0)/Number(d.chapters)*100:(Number(d.currentPage)||0)/Number(d.pages)*100));
   return `<div class="bar" style="margin-top:.5rem" role="img" aria-label="${pct}% read"><i style="width:${pct}%"></i></div>`;
 }
 function progressButtons(e){
@@ -1098,6 +1119,7 @@ function progressButtons(e){
   if(['planned','paused','dropped'].includes(e.status))out.push(b('▶ Start','start'));
   if(e.status==='ongoing'){
     if(e.type==='book')out.push(b('+10 pages','pages',10),b('+25 pages','pages',25));
+    else if(e.type==='fanfic')out.push(b('+1 chapter','chapter'));
     else if(e.type==='tv')out.push(b('Next episode','episode'));
     else if(e.type==='game'||e.type==='online')out.push(b('+1 h','hours',1),b('+5 h','hours',5));
     out.push(b('✓ Finish','finish'));
@@ -1111,6 +1133,7 @@ function bumpProgress(id,k,v){
   let msg='';
   if(k==='start'){e.status='ongoing';if(!open())e.dates.push({start:t,end:'',note:''});msg='Started “'+e.title+'”';}
   else if(k==='pages'){const pages=Number(d.pages)||Infinity;d.currentPage=Math.min(pages,(Number(d.currentPage)||0)+Number(v));msg='Page '+d.currentPage+(Number(d.pages)?' of '+d.pages:'')+(d.currentPage>=pages?'. Tap Finish when you are done.':'');}
+  else if(k==='chapter'){const total=Number(d.chapters)||Infinity;d.currentChapter=Math.min(total,(Number(d.currentChapter)||0)+1);msg='Chapter '+d.currentChapter+(Number(d.chapters)?' of '+d.chapters:'')+(d.currentChapter>=total?'. Tap Finish when you are done.':'');}
   else if(k==='episode'){d.episodes=nextEpisode(d.episodes);msg='Now at '+d.episodes;}
   else if(k==='hours'){d.hours=Math.round(((Number(d.hours)||0)+Number(v))*10)/10;msg=num(d.hours)+' hours played';}
   else if(k==='finish-old'){e.status='finished';if(e.type==='book'&&Number(d.pages)>0)d.currentPage=Number(d.pages);msg='Marked “'+e.title+'” as finished';}
@@ -1307,16 +1330,17 @@ function importMediaApp(rows){
     const id=ao3?'ao3-'+ao3[1]:ffn?'ffn-'+ffn[1]:isbn?'isbn-'+isbn:'mapp-'+hash32(title);
     const shelves=lines.filter(l=>/^Shelves:/i.test(l)).flatMap(l=>l.replace(/^Shelves:/i,'').split(',')).map(x=>x.trim()).filter(x=>x&&!/^currently reading$/i.test(x));
     const notes=lines.filter(l=>l.trim()&&!/^https?:\/\//i.test(l.trim())&&!/^Shelves:/i.test(l)).join('\n').trim();
-    const details={},fmt=String(r.format||'').trim();
+    const details={},fmt=String(r.format||'').trim(),isFic=!!(ao3||ffn)||/^fan ?fic/i.test(fmt);
     if(fmt)details.format=/^web ?comic$/i.test(fmt)?'Comic / manga':/^web ?novel$/i.test(fmt)?'Web novel':/^fan ?fic/i.test(fmt)?'Fanfic':['Paper','E-book','Audiobook'].find(f=>f.toLowerCase()===fmt.toLowerCase())||'';
-    if(!details.format)delete details.format;
-    if(Number(r.current_page)>0)details.currentPage=Number(r.current_page);
-    if(Number(r.pages)>0)details.pages=Number(r.pages);
+    if(!details.format||isFic)delete details.format;
+    if(isFic)details.site=ao3?'AO3':ffn?'fanfiction.net':'Other';
+    if(!isFic&&Number(r.current_page)>0)details.currentPage=Number(r.current_page);
+    if(!isFic&&Number(r.pages)>0)details.pages=Number(r.pages);
     const ds=String(r.run_finished_dates||'').split('|'),ns=String(r.run_notes||'').split('|'),dates=[];
     for(let i=0;i<Math.max(ds.length,ns.length);i++){
       let note=String(ns[i]||'').trim();
       for(const [rx,k] of [[/(\d+)\s*words?\b/i,'words'],[/(\d+)\s*chapters?\b/i,'chapters'],[/(\d+)\s*pages?\b/i,'pages']]){
-        const m=rx.exec(note);if(m){if(Number(m[1])>0&&!details[k]&&(k!=='pages'||status==='finished'))details[k]=Number(m[1]);note=note.replace(m[0],'').replace(/^[\s;,]+|[\s;,]+$/g,'');}
+        const m=rx.exec(note);if(m){if(Number(m[1])>0&&!details[k]&&(k!=='pages'||(status==='finished'&&!isFic)))details[k]=Number(m[1]);note=note.replace(m[0],'').replace(/^[\s;,]+|[\s;,]+$/g,'');}
       }
       note=note.replace(/^Readthrough \d+[;\s]*$/i,'').replace(/^(Readthrough \d+;)\s+/i,'$1 ').trim();
       const w=when(ds[i]);
@@ -1326,7 +1350,7 @@ function importMediaApp(rows){
     if(r.franchise){const fid='mapp-fr-'+hash32(r.franchise.toLowerCase());if(!frs.has(fid))frs.set(fid,{id:fid,name:r.franchise,notes:'',timelines:[],created:now(),updated:IMPORT_STAMP});franchiseId=fid;}
     const listIds=[...new Set([...(String(r.favorite).toLowerCase()==='true'?[listFor('Favourites')]:[]),...shelves.map(listFor)])];
     const stars=halfStar(r.stars),lastEnd=dates.map(d=>d.end).filter(Boolean).sort().pop();
-    const e=importEntry({id,type:'book',title,creator:r.author||'',franchiseId,status,stars,genres:String(r.genres||'').split(/[,;]/),dates,details,notes,
+    const e=importEntry({id,type:isFic?'fanfic':'book',title,creator:r.author||'',franchiseId,status,stars,genres:String(r.genres||'').split(/[,;]/),dates,details,notes,
       url:ao3||ffn?link.trim():isbn?'https://openlibrary.org/isbn/'+isbn:'',created:lastEnd?lastEnd+'T12:00:00.000Z':undefined});
     if(FEELINGS.some(f=>f.k===String(r.feeling||'').toLowerCase()))e.feeling=String(r.feeling).toLowerCase();
     e.listIds=listIds;out.push(e);
@@ -2010,6 +2034,7 @@ function ratingsInline(e){
 function progressText(e){
   const d=e.details||{};
   if(e.type==='book'&&d.pages&&d.currentPage&&e.status!=='finished')return `p. ${d.currentPage} of ${d.pages} (${Math.round(d.currentPage/d.pages*100)}%)`;
+  if(e.type==='fanfic'&&d.currentChapter&&e.status!=='finished')return `ch. ${d.currentChapter}`+(d.chapters?` of ${d.chapters}`:'');
   if((e.type==='game'||e.type==='online')&&d.hours)return `${num(d.hours)} h played`;
   if(e.type==='tv'&&d.episodes)return d.episodes;
   if(e.type==='escape'&&d.escaped)return d.escaped==='Yes'?'Escaped! 🎉':'Did not escape';
@@ -2361,6 +2386,7 @@ function viewSettings(){
   ${native||!feat('drag_drop_import')?'':'<p class="muted small">You can also drop a backup .json file anywhere on this page to import it.</p>'}</div>
   ${exportPanel()}
   ${importPanel()}
+  ${fanficMovePanel()}
   ${tagRulesPanel()}
   <div class="panel"><h2>Look &amp; readability</h2>
     <div class="row2">
@@ -2409,7 +2435,7 @@ function editorHTML(){
   <form id="editor" autocomplete="off">
     <div class="modal-head"><h2>${d.id?'Edit entry':'Log something'}</h2><button type="button" class="btn ghost" data-act="ed-close">Close ✕</button></div>
     <fieldset><legend>What is it?</legend><div class="chips">${TYPE_KEYS.map(k=>`<button type="button" class="chip${d.type===k?' sel':''}" aria-pressed="${d.type===k}" data-act="ed-type" data-v="${k}">${TYPES[k].icon} ${TYPES[k].label}</button>`).join('')}</div></fieldset>
-    ${d.type==='book'?ao3EditorBox():''}
+    ${d.type==='book'||d.type==='fanfic'?ao3EditorBox():''}
     <div class="row2">
       <label>Title<input name="title" type="text" value="${esc(d.title)}" required></label>
       <label>${esc(T.creator)}<input name="creator" type="text" value="${esc(d.creator)}"></label>
