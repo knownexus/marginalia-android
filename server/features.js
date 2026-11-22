@@ -18,6 +18,7 @@ const FLAG_DEFAULTS = {
   quick_add: false,       // One-line quick add on Home
   sync_notices: false,    // Say what a sync merged and when edits conflicted
   covers: false,          // Cover images and a link on each entry
+  tags: false,            // Tags kept separate from genres
   ao3_fetch: false,       // Pull a story's details and tags from its AO3 link
   cover_fetch: false,     // Find covers automatically for new books (needs covers)
   progress: false,        // One-tap progress buttons (+10 pages, next episode, +1 h, finish)

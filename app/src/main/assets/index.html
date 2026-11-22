@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-eTJRgl5mpmUyljC1SdJrClz+ymc5BXCpDj7DCOrWpTk='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-5oBW4Uz4Ra4x/H3G/C5v1IJD7LE/iYGyv+Q+MVKwtZM='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -82,6 +82,7 @@ legend{font-weight:700;padding:0 .4rem}
 button.chip{cursor:pointer;min-height:2.2rem}
 .chip.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 .chip.genre{border-style:dashed;color:var(--muted)}
+.chip.tag{border-style:dotted;color:var(--muted)}
 
 /* panels & cards */
 .panel{background:var(--panel);border:3px double var(--border);border-radius:var(--radius);padding:1rem 1.1rem;margin-bottom:1.2rem}
@@ -395,7 +396,7 @@ const opened=new Set();
 function loadJSON(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
 function normalize(d){
   d=d||{};
-  d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],status:'planned',stars:null,feeling:'',mix:'',dates:[],details:{},notes:'',links:[],cover:'',url:'',listIds:[],workId:'',created:now(),updated:now()},migrateMix(Object.assign({},e)),{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[],listIds:e.listIds||[]}));
+  d.entries=(d.entries||[]).map(e=>Object.assign({type:'book',title:'',creator:'',franchiseId:'',genres:[],tags:[],status:'planned',stars:null,feeling:'',mix:'',dates:[],details:{},notes:'',links:[],cover:'',url:'',listIds:[],workId:'',created:now(),updated:now()},migrateMix(Object.assign({},e)),{genres:e.genres||[],dates:e.dates||[],details:e.details||{},links:e.links||[],listIds:e.listIds||[]}));
   d.franchises=(d.franchises||[]).map(f=>Object.assign({name:'',notes:'',created:now(),updated:now()},f,{timelines:f.timelines||[]}));
   d.lists=(d.lists||[]).map(l=>Object.assign({name:'',notes:'',created:now(),updated:now()},l));
   d.views=(d.views||[]).map(v=>migrateViewFilter(Object.assign({name:'',filter:{},pinned:false,created:now(),updated:now()},v)));
@@ -483,10 +484,10 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false,addingAccount=false;
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
   version_history:false,offline_app:false,quick_add:false,sync_notices:false,
   covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false,
-  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false,editions:false,cover_fetch:false,ao3_fetch:false};
+  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false,editions:false,cover_fetch:false,ao3_fetch:false,tags:false};
 const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
   covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions',
-  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo',editions:'Editions',cover_fetch:'Find covers automatically',ao3_fetch:'Fetch stories from AO3'};
+  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo',editions:'Editions',cover_fetch:'Find covers automatically',ao3_fetch:'Fetch stories from AO3',tags:'Tags separate from genres'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
@@ -749,7 +750,7 @@ const Q_TYPES={book:'book',books:'book',fanfic:'fanfic',fanfiction:'fanfic',fic:
 const Q_STATUS={planned:'planned',plan:'planned',todo:'planned',want:'planned',wishlist:'planned',ongoing:'ongoing',reading:'ongoing',watching:'ongoing',playing:'ongoing',started:'ongoing',current:'ongoing','in progress':'ongoing',
   finished:'finished',done:'finished',read:'finished',watched:'finished',played:'finished',completed:'finished',paused:'paused',hold:'paused','on hold':'paused',dropped:'dropped',dnf:'dropped',abandoned:'dropped'};
 function parseQuick(text){
-  const out={title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],franchise:'',list:'',date:'',notes:[]};
+  const out={title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],tags:[],franchise:'',list:'',date:'',notes:[]};
   const t=String(text||'').replace(/(^|\s)#([\w-]+)/g,(m,sp,g)=>{out.genres.push(g.toLowerCase());return sp;});
   const parts=t.split(',').map(x=>x.trim()).filter(Boolean);
   if(!parts.length)return null;
@@ -765,6 +766,7 @@ function parseQuick(text){
     else if((m=/^by\s+(.+)$/i.exec(seg)))out.creator=m[1].trim();
     else if((m=/^(?:in|franchise:?)\s+(.+)$/i.exec(seg)))out.franchise=m[1].trim();
     else if((m=/^(?:list|on list):?\s+(.+)$/i.exec(seg)))out.list=m[1].trim();
+    else if((m=/^tags?:\s*(.+)$/i.exec(seg)))out.tags.push(...m[1].split(';').map(x=>x.trim().toLowerCase()).filter(Boolean));
     else if(k==='today')out.date=today();
     else if(k==='yesterday'){const d=new Date();d.setDate(d.getDate()-1);out.date=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
     else if((m=/^(?:on\s+)?(\d{4}-\d{2}-\d{2})$/.exec(k)))out.date=m[1];
@@ -774,9 +776,9 @@ function parseQuick(text){
   return out;
 }
 function quickSummary(q){
-  if(!q)return 'Type a title, then add details separated by commas: a type (book, film, tv, game…), a status (finished, reading…), a rating (4 stars), #genres, in Franchise, a date (today, 2026-03-12), list: Name. Press Enter to add.';
+  if(!q)return 'Type a title, then add details separated by commas: a type (book, film, tv, game…), a status (finished, reading…), a rating (4 stars), #genres, in Franchise, a date (today, 2026-03-12), list: Name, tags: a; b. Press Enter to add.';
   const T=TYPES[q.type];
-  return [T.icon+' '+T.label,statusLabel(q.status),q.stars!=null?'★'+q.stars:'',q.creator&&'by '+q.creator,q.franchise&&'❦ '+q.franchise,q.list&&'☰ '+q.list,q.genres.map(g=>'#'+g).join(' '),q.date&&fmtDate(q.date),q.notes.length&&'note: '+q.notes.join('; ')].filter(Boolean).join(' · ');
+  return [T.icon+' '+T.label,statusLabel(q.status),q.stars!=null?'★'+q.stars:'',q.creator&&'by '+q.creator,q.franchise&&'❦ '+q.franchise,q.list&&'☰ '+q.list,q.genres.map(g=>'#'+g).join(' '),q.tags.length&&'tags: '+q.tags.join(', '),q.date&&fmtDate(q.date),q.notes.length&&'note: '+q.notes.join('; ')].filter(Boolean).join(' · ');
 }
 const quickBar=()=>feat('quick_add')?`<div class="panel"><label for="quick">Quick add</label><input id="quick" type="text" placeholder="Dune by Frank Herbert, book, finished, 4 stars, #scifi" autocomplete="off" aria-describedby="quickprev"><p id="quickprev" class="muted small" style="margin:.5rem 0 0">${esc(quickSummary(null))}</p></div>`:'';
 function addQuick(){
@@ -787,7 +789,7 @@ function addQuick(){
   const t=now(),dates=[];
   if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});
   else if(q.status==='ongoing')dates.push({start:q.date||today(),end:'',note:''});
-  db.entries.push({id:uid(),type:q.type,title:q.title,creator:q.creator,franchiseId:q.franchise?ensureFranchise(q.franchise):'',genres:[...new Set(q.genres)],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:{},notes:q.notes.join('\n'),links:[],cover:'',url:'',listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t});
+  db.entries.push({id:uid(),type:q.type,title:q.title,creator:q.creator,franchiseId:q.franchise?ensureFranchise(q.franchise):'',genres:[...new Set(tagsOn()?q.genres:[...q.genres,...q.tags])],tags:tagsOn()?[...new Set(q.tags)]:[],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:{},notes:q.notes.join('\n'),links:[],cover:'',url:'',listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t});
   if(!saveLocal()){db.entries.pop();return;}
   toast('Added “'+q.title+'”');render();const n=$('#quick');if(n)n.focus();
 }
@@ -819,7 +821,7 @@ function tagSuggestions(key,vocab,limit){   // existing tags this one probably m
 }
 function tagVocab(withFranchises){
   const m=new Map();
-  for(const e of db.entries)for(const g of e.genres){const k=tagKey(g);if(!k)continue;const x=m.get(k);if(x)x.n++;else m.set(k,{name:g,key:k,n:1});}
+  for(const e of db.entries)for(const g of [...(tagsOn()?(e.tags||[]):[]),...e.genres]){const k=tagKey(g);if(!k)continue;const x=m.get(k);if(x)x.n++;else m.set(k,{name:g,key:k,n:1});}
   if(withFranchises)for(const f of db.franchises){const k=tagKey(f.name);if(k&&!m.has(k))m.set(k,{name:f.name,key:k,n:0});}
   return [...m.values()].sort((a,b)=>b.n-a.n||a.name.localeCompare(b.name));
 }
@@ -939,7 +941,8 @@ async function ao3FillEditor(){
   toast('');const sel=await reviewAo3(w);if(!sel||!ed)return;
   syncDraft();ed.type='fanfic';ed.title=w.title;ed.creator=w.author;ed.url=w.url;
   if(sel.franchiseName)ed.franchise=sel.franchiseName;
-  ed.genres=[...new Set([...ed.genres.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean),...sel.tags])].join(', ');
+  if(tagsOn())ed.tags=[...new Set([...String(ed.tags||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean),...sel.tags])].join(', ');
+  else ed.genres=[...new Set([...ed.genres.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean),...sel.tags])].join(', ');
   ed.details=Object.assign({},ed.details,ao3Fields(w));ed.notes=withSummary(ed.notes,w.summary);
   paintEditor();toast('Filled in from AO3. Check it, then save.');
 }
@@ -949,9 +952,9 @@ async function addQuickAo3(id,rest){
   const q=parseQuick('x'+(rest?', '+rest:''))||{title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],franchise:'',list:'',date:'',notes:[]},t=now(),dates=[];
   if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});else if(q.status==='ongoing')dates.push({start:q.date||today(),end:'',note:''});
   const fr=sel.franchiseName||q.franchise;
-  const rec={id:'ao3-'+id,type:'fanfic',title:w.title,creator:w.author,franchiseId:fr?ensureFranchise(fr):'',genres:[...new Set([...q.genres,...sel.tags])],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:ao3Fields(w),notes:withSummary(q.notes.join('\n'),w.summary),links:[],cover:'',url:w.url,listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t};
+  const rec={id:'ao3-'+id,type:'fanfic',title:w.title,creator:w.author,franchiseId:fr?ensureFranchise(fr):'',genres:[...new Set(tagsOn()?q.genres:[...q.genres,...q.tags,...sel.tags])],tags:tagsOn()?[...new Set([...q.tags,...sel.tags])]:[],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:ao3Fields(w),notes:withSummary(q.notes.join('\n'),w.summary),links:[],cover:'',url:w.url,listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t};
   const i=db.entries.findIndex(e=>e.id===rec.id);
-  if(i>=0){if(!confirm('You already have this story. Update it from AO3?'))return;const prev=db.entries[i];rec.stars=q.stars!=null?q.stars:prev.stars;rec.status=prev.status;rec.dates=prev.dates;rec.listIds=prev.listIds;rec.created=prev.created;rec.cover=prev.cover;rec.notes=withSummary(prev.notes,w.summary);rec.genres=[...new Set([...prev.genres,...sel.tags])];db.entries[i]=Object.assign({},prev,rec);}
+  if(i>=0){if(!confirm('You already have this story. Update it from AO3?'))return;const prev=db.entries[i];rec.stars=q.stars!=null?q.stars:prev.stars;rec.status=prev.status;rec.dates=prev.dates;rec.listIds=prev.listIds;rec.created=prev.created;rec.cover=prev.cover;rec.notes=withSummary(prev.notes,w.summary);if(tagsOn()){rec.tags=[...new Set([...(prev.tags||[]),...sel.tags])];rec.genres=prev.genres;}else rec.genres=[...new Set([...prev.genres,...sel.tags])];db.entries[i]=Object.assign({},prev,rec);}
   else db.entries.push(rec);
   if(!saveLocal())return;
   toast('Added “'+w.title+'”');render();
@@ -962,7 +965,7 @@ function ao3ApplyKnown(e,w){   // fills an entry from AO3 using only tags you al
   if(!e.title||ao3Placeholder(e.title))e.title=w.title;
   if(!e.creator)e.creator=w.author;
   if(!e.franchiseId&&sel.franchiseName)e.franchiseId=ensureFranchise(sel.franchiseName);
-  e.genres=[...new Set([...e.genres,...sel.tags])];
+  if(tagsOn())e.tags=[...new Set([...(e.tags||[]),...sel.tags])];else e.genres=[...new Set([...e.genres,...sel.tags])];
   if(e.type==='book'){e.type='fanfic';delete e.details.format;}   // an AO3 story is fanfiction
   e.details=Object.assign({},ao3Fields(w),e.details);
   e.notes=withSummary(e.notes,w.summary);e.updated=now();
@@ -976,13 +979,13 @@ let ao3NextAt=0,ao3Pending=false,ao3Stat={done:0,msg:'',painted:0};
 const ao3Skips=()=>{try{const m=JSON.parse(localStorage.getItem(AO3_SKIP_KEY)||'{}'),t=Date.now(),o={};for(const k in m)if(m[k]>t)o[k]=m[k];return o;}catch(e){return {};}};
 const ao3Skip=(id,days)=>{try{const m=ao3Skips();m[id]=Date.now()+days*864e5;localStorage.setItem(AO3_SKIP_KEY,JSON.stringify(m));}catch(e){}};
 const ao3Candidates=()=>{const sk=ao3Skips();return db.entries.filter(e=>ao3Placeholder(e.title)&&ao3IdOf(e.url)&&!sk[e.id]);};
-function ao3PaintStatus(){
-  const el=$('#ao3auto-status');if(!el)return;
+function ao3StatusText(){
   const n=ao3Candidates().length,wait=Math.max(0,Math.ceil((ao3NextAt-Date.now())/1000));
   const stories=k=>k+(k===1?' story':' stories');
   const parts=!settings.ao3Auto?[n?stories(n)+' still '+(n===1?'has':'have')+' a placeholder title':'Nothing waiting']:[n?stories(n)+' waiting':'Nothing waiting',ao3Stat.done?ao3Stat.done+' filled in since you opened this page':'',ao3Stat.msg,n&&wait>20?'Next try in '+Math.ceil(wait/60)+' min':''];
-  el.textContent=parts.filter(Boolean).join('. ')+'.';
+  return parts.filter(Boolean).join('. ')+'.';
 }
+function ao3PaintStatus(){const el=$('#ao3auto-status');if(el)el.textContent=ao3StatusText();}
 async function ao3Tick(){
   if(ao3Pending||Date.now()<ao3NextAt||!settings.ao3Auto||!ao3On())return;
   if(ed||ao3Busy||coverBusy||ao3dlg||!$('#overlay').hidden||navigator.onLine===false)return;
@@ -1010,7 +1013,7 @@ function ao3AutoPanel(){
   if(!feat('ao3_fetch'))return '';
   return `<div class="panel"><h2>Fill in AO3 stories automatically</h2><p class="muted" style="margin-top:0">Works through stories that still have a placeholder title (such as “AO3 #123”), about one every ${AO3_AUTO_GAP/1000} seconds, adding the title, author, word count, summary and fandom, and only the tags you already use. It runs only while Marginalia is open and you are signed in, pauses when AO3 asks it to slow down, and does nothing while you are editing.</p>
   <label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" data-change="set" data-k="ao3Auto" ${settings.ao3Auto?'checked':''}> Fill them in automatically</label>
-  <p class="muted small" id="ao3auto-status" role="status">${esc(String(ao3Candidates().length)+' waiting.')}</p></div>`;
+  <p class="muted small" id="ao3auto-status" role="status">${esc(ao3StatusText())}</p></div>`;
 }
 async function bulkAo3(){   // fills in the selected stories that have an AO3 link, using only tags you already know
   if(ao3Busy)return;
@@ -1117,6 +1120,49 @@ async function fetchCoverFor(e){   // asks the server to look the cover up; retu
   return makeCover(await r.blob());
 }
 let coverBusy=false;
+/* Background cover search: while Marginalia is open and signed in, looks up covers for books that have none, one every few
+   seconds. It never shows a notice: progress and problems appear only in the status line in Settings. Books nothing matches
+   are not tried again for a month. */
+const COVER_AUTO_GAP=7000,COVER_SKIP_KEY='marginalia.coverskip';
+let coverNextAt=0,coverPending=false,coverStat={done:0,msg:'',painted:0,stopped:false};
+const coverSkips=()=>{try{const m=JSON.parse(localStorage.getItem(COVER_SKIP_KEY)||'{}'),t=Date.now(),o={};for(const k in m)if(m[k]>t)o[k]=m[k];return o;}catch(e){return {};}};
+const coverSkip=(id,days)=>{try{const m=coverSkips();m[id]=Date.now()+days*864e5;localStorage.setItem(COVER_SKIP_KEY,JSON.stringify(m));}catch(e){}};
+const coverFindable=e=>e.type==='book'&&!e.cover&&String(e.title||'').trim()&&!ao3Placeholder(e.title)&&!/^(ISBN \d+|fanfiction\.net \d+)$/.test(e.title);
+const coverCandidates=()=>{const sk=coverSkips();return db.entries.filter(e=>coverFindable(e)&&!sk[e.id]);};
+function coverStatusText(){
+  const n=coverCandidates().length,wait=Math.max(0,Math.ceil((coverNextAt-Date.now())/1000)),books=k=>k+(k===1?' book':' books');
+  const parts=!settings.coverAuto?[n?books(n)+' without a cover could be searched':'Every book already has a cover, or has been searched']:[n?books(n)+' left to search':'Nothing left to search',coverStat.done?coverStat.done+' covers found since you opened this page':'',coverStat.msg,n&&wait>20?'Next try in '+Math.ceil(wait/60)+' min':''];
+  return parts.filter(Boolean).join('. ')+'.';
+}
+function coverPaintStatus(){const el=$('#coverauto-status');if(el)el.textContent=coverStatusText();}
+async function coverTick(){
+  if(coverPending||coverStat.stopped||Date.now()<coverNextAt||!settings.coverAuto||!coverFetchOn())return;
+  if(ed||ao3Busy||coverBusy||ao3dlg||ao3Pending||!$('#overlay').hidden||navigator.onLine===false)return;
+  const e=coverCandidates()[0];if(!e){coverStat.msg='';coverPaintStatus();return;}
+  coverPending=true;const gen=profileGen,id=e.id;
+  try{
+    const c=await fetchCoverFor(e);
+    if(gen!==profileGen)return;
+    const cur=byId(id);
+    if(!c){coverSkip(id,30);}
+    else if(cur&&!cur.cover){cur.cover=c;cur.updated=now();saveLocal();coverStat.done++;coverStat.msg='';
+      if(Date.now()-coverStat.painted>30000&&!editingInApp()&&!picked.size&&$('#overlay').hidden){coverStat.painted=Date.now();render();}}
+    coverNextAt=Date.now()+COVER_AUTO_GAP;
+  }catch(x){
+    if(/size limit/i.test(x.message)){coverStat.stopped=true;coverStat.msg='Stopped: the library is close to its size limit';}
+    else if(x.message==='Signed out'){coverNextAt=Date.now()+60000;}
+    else if(/not turned on/i.test(x.message)){coverStat.stopped=true;coverStat.msg='Cover lookup is not turned on for this account';}
+    else if(/too detailed/i.test(x.message)){coverSkip(id,30);coverNextAt=Date.now()+COVER_AUTO_GAP;}
+    else{coverNextAt=Date.now()+(/Too many|limited/i.test(x.message)?30:5)*60000;coverStat.msg='Paused, will try again later';}   // quietly try again later
+  }finally{coverPending=false;coverPaintStatus();}
+}
+setInterval(()=>{coverTick().catch(()=>{});},1000);
+function coverAutoPanel(){
+  if(!coverFetchOn())return '';
+  return `<div class="panel"><h2>Find missing covers automatically</h2><p class="muted" style="margin-top:0">Works through books that have no cover, about one every ${COVER_AUTO_GAP/1000} seconds, looking them up online and storing a small copy in your library. It runs only while Marginalia is open and you are signed in, does nothing while you are editing, and never pops up notices: this line is the only place it reports. Books it cannot find are not tried again for a month.</p>
+  <label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" data-change="set" data-k="coverAuto" ${settings.coverAuto?'checked':''}> Find them automatically</label>
+  <p class="muted small" id="coverauto-status" role="status">${esc(coverStatusText())}</p></div>`;
+}
 async function bulkCovers(){
   if(coverBusy)return;
   const todo=pickedEntries().filter(e=>!e.cover);
@@ -1294,7 +1340,8 @@ const cleanText=s=>String(s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g
 function hash32(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
 const pick_=(r,...names)=>{for(const n of names){const k=Object.keys(r).find(x=>x.toLowerCase()===n);if(k&&r[k]!=='')return r[k];}return '';};
 function importEntry(o){
-  return {id:o.id,type:o.type,title:o.title,creator:o.creator||'',franchiseId:o.franchiseId||'',genres:[...new Set((o.genres||[]).map(g=>g.trim().toLowerCase()).filter(Boolean))],status:o.status||'finished',stars:o.stars==null?null:o.stars,feeling:'',mix:'',
+  const lab=a=>[...new Set((a||[]).map(g=>String(g).trim().toLowerCase()).filter(Boolean))];
+  return {id:o.id,type:o.type,title:o.title,creator:o.creator||'',franchiseId:o.franchiseId||'',genres:tagsOn()?lab(o.genres):lab([...(o.genres||[]),...(o.tags||[])]),tags:tagsOn()?lab(o.tags):[],status:o.status||'finished',stars:o.stars==null?null:o.stars,feeling:'',mix:'',
     dates:o.dates||[],details:o.details||{},notes:o.notes||'',links:[],cover:'',url:o.url||'',listIds:[],workId:'',created:o.created||now(),updated:IMPORT_STAMP};
 }
 /* Audible, through a Libation (or OpenAudible-style) export, as JSON or CSV. */
@@ -1413,14 +1460,14 @@ function importRows(rows,fileName){
       const shelf=(r['Exclusive Shelf']||'').toLowerCase(),status={read:'finished','currently-reading':'ongoing','to-read':'planned'}[shelf]||'finished',end=isoDate(r['Date Read']),pages=Number(r['Number of Pages']);
       out.push(importEntry({id:'gr-'+(String(r['Book Id']||'').replace(/\D/g,'')||hash32(title+'|'+r['Author'])),type:'book',title,creator:r['Author'],status,stars:halfStar(r['My Rating']),
         dates:status==='finished'&&end?[{start:'',end,note:''}]:status==='ongoing'&&isoDate(r['Date Added'])?[{start:isoDate(r['Date Added']),end:'',note:''}]:[],
-        details:pages>0?{pages}:{},genres:(r['Bookshelves']||'').split(',').filter(g=>!['read','to-read','currently-reading'].includes(g.trim().toLowerCase())),notes:cleanText(r['My Review'])}));}
+        details:pages>0?{pages}:{},tags:(r['Bookshelves']||'').split(',').filter(g=>!['read','to-read','currently-reading'].includes(g.trim().toLowerCase())),notes:cleanText(r['My Review'])}));}
     return {kind:'Goodreads',entries:out};
   }
   if(H.has('read status')&&H.has('star rating')){
     for(const r of rows){const title=r['Title'];if(!title)continue;
       const end=isoDate(r['Last Date Read']),status={'read':'finished','currently-reading':'ongoing','to-read':'planned','paused':'paused','did-not-finish':'dropped'}[(r['Read Status']||'').toLowerCase()]||'finished';
       out.push(importEntry({id:'sg-'+hash32(title+'|'+(r['Authors']||'')),type:'book',title,creator:r['Authors'],status,stars:halfStar(r['Star Rating']),dates:end&&status==='finished'?[{start:'',end,note:''}]:[],
-        genres:(r['Tags']||'').split(','),notes:cleanText(r['Review']),details:r['Format']?{format:['Paper','E-book','Audiobook','Comic / manga'].find(f=>f.toLowerCase().startsWith(String(r['Format']).toLowerCase().slice(0,4)))||''}:{}}));}
+        tags:(r['Tags']||'').split(','),notes:cleanText(r['Review']),details:r['Format']?{format:['Paper','E-book','Audiobook','Comic / manga'].find(f=>f.toLowerCase().startsWith(String(r['Format']).toLowerCase().slice(0,4)))||''}:{}}));}
     out.forEach(e=>{if(!e.details.format)delete e.details.format;});
     return {kind:'StoryGraph',entries:out};
   }
@@ -1429,11 +1476,11 @@ function importRows(rows,fileName){
     for(const r of rows){const title=r['Name'];if(!title)continue;
       const id='lb-'+(String(r['Letterboxd URI']||'').split('/').filter(Boolean).pop()||hash32(title+r['Year'])).replace(/[^A-Za-z0-9_-]/g,'');
       const end=watchlist?'':isoDate(r['Watched Date']||r['Date']),e=importEntry({id,type:'film',title,status:watchlist?'planned':'finished',stars:halfStar(r['Rating']),dates:end?[{start:'',end,note:r['Rewatch']==='Yes'?'rewatch':''}]:[],
-        details:Number(r['Year'])>0?{year:Number(r['Year'])}:{},genres:(r['Tags']||'').split(','),notes:cleanText(r['Review'])}),ex=acc.get(id);
+        details:Number(r['Year'])>0?{year:Number(r['Year'])}:{},tags:(r['Tags']||'').split(','),notes:cleanText(r['Review'])}),ex=acc.get(id);
       if(!ex){acc.set(id,e);continue;}
       if(ex.stars==null)ex.stars=e.stars;
       for(const d of e.dates)if(!ex.dates.some(x=>x.end===d.end&&x.start===d.start))ex.dates.push(d);
-      if(e.status==='finished')ex.status='finished';ex.genres=[...new Set([...ex.genres,...e.genres])];if(!ex.notes)ex.notes=e.notes;
+      if(e.status==='finished')ex.status='finished';ex.genres=[...new Set([...ex.genres,...e.genres])];ex.tags=[...new Set([...(ex.tags||[]),...(e.tags||[])])];if(!ex.notes)ex.notes=e.notes;
     }
     return {kind:'Letterboxd',entries:[...acc.values()]};
   }
@@ -1446,7 +1493,7 @@ function importRows(rows,fileName){
       let rate=Number(pick_(r,'rating','stars','my rating'));if(rate>5&&rate<=10)rate/=2;
       const end=isoDate(pick_(r,'finished','date finished','end','date','date read')),start=isoDate(pick_(r,'started','date started','start'));
       const status=stat[pick_(r,'status','shelf').toLowerCase()]||(end?'finished':'planned');
-      out.push(importEntry({id:'csv-'+hash32(type+'|'+title.toLowerCase()+'|'+creator.toLowerCase()),type,title,creator,status,stars:halfStar(rate),dates:start||end?[{start,end,note:''}]:[],genres:pick_(r,'genres','genre','tags').split(/[,;]/),notes:pick_(r,'notes','review','comments')}));}
+      out.push(importEntry({id:'csv-'+hash32(type+'|'+title.toLowerCase()+'|'+creator.toLowerCase()),type,title,creator,status,stars:halfStar(rate),dates:start||end?[{start,end,note:''}]:[],genres:pick_(r,'genres','genre').split(/[,;]/),tags:pick_(r,'tags','tag').split(/[,;]/),notes:pick_(r,'notes','review','comments')}));}
     return {kind:'CSV',entries:out};
   }
   return {kind:'unknown',entries:[]};
@@ -1565,6 +1612,14 @@ function genreBtns(e){
   const all=e.genres,open=genreOpen.has(e.id),shown=open?all:all.slice(0,3);
   return shown.map(g=>chipBtn('genre',g,esc(g),'genre')).join('')+(all.length>3?`<button type="button" class="chip genre" data-act="more-genres" data-id="${e.id}" title="${open?'Show fewer':esc(all.slice(3).join(', '))}">${open?'show fewer':'+'+(all.length-3)}</button>`:'');
 }
+const tagsOn=()=>feat('tags');
+const tagOpen=new Set();
+function tagBtns(e){
+  const all=e.tags||[];if(!tagsOn()||!all.length)return '';
+  const open=tagOpen.has(e.id),shown=open?all:all.slice(0,3);
+  return shown.map(t=>chipBtn('tag',t,esc(t),'tag')).join('')+(all.length>3?`<button type="button" class="chip tag" data-act="more-tags" data-id="${e.id}" title="${open?'Show fewer':esc(all.slice(3).join(', '))}">${open?'show fewer':'+'+(all.length-3)}</button>`:'');
+}
+const tagSpans=e=>{const t=tagsOn()?(e.tags||[]):[];const v=LA()?t.slice(0,3):t;return v.map(x=>`<span class="chip tag">${esc(x)}</span>`).join('')+(LA()&&t.length>3?`<span class="chip tag" title="${esc(t.slice(3).join(', '))}">+${t.length-3}</span>`:'');};
 const genreSpans=e=>{const g=LA()?e.genres.slice(0,3):e.genres;return g.map(x=>`<span class="chip genre">${esc(x)}</span>`).join('')+(LA()&&e.genres.length>3?`<span class="chip genre" title="${esc(e.genres.slice(3).join(', '))}">+${e.genres.length-3}</span>`:'');};
 function quickList(e){
   if(!feat('lists'))return '';
@@ -1589,6 +1644,7 @@ function libCard(e){
     <div class="meta">${quickStars(e)}</div>
     ${(p||d)?`<div class="meta muted">${p?esc(p):''} ${d?'· '+fmtDate(d):''}</div>`:''}
     ${e.genres.length?`<div class="chips" style="margin-top:.3rem">${genreBtns(e)}</div>`:''}
+    ${tagBtns(e)?`<div class="chips" style="margin-top:.3rem">${tagBtns(e)}</div>`:''}
     ${editionChipsBtn(e)}
     <div class="prog">${quickState(e)}${quickList(e)}</div></div>`;
 }
@@ -1601,12 +1657,12 @@ function bulkBar(){
     <button type="button" class="btn small" data-act="sel-all">Select all ${libShown.length} shown</button><button type="button" class="btn small" data-act="sel-none">Clear</button>
     <select data-change="bulk-status" aria-label="Set status for the selected"><option value="">Set status…</option>${STATUSES.map(s=>`<option value="${s[0]}">${esc(s[1])}</option>`).join('')}</select>
     ${feat('lists')?`<select data-change="bulk-list" aria-label="Add the selected to a list"><option value="">Add to list…</option>${[...db.lists].sort(byName).map(l=>opt(l.id,l.name,'')).join('')}<option value="__new">＋ New list…</option></select>`:''}
-    <button type="button" class="btn small" data-act="bulk-genre" data-v="add">＋ Genre</button><button type="button" class="btn small" data-act="bulk-genre" data-v="remove">− Genre</button>
+    <button type="button" class="btn small" data-act="bulk-genre" data-v="add">＋ Genre</button><button type="button" class="btn small" data-act="bulk-genre" data-v="remove">− Genre</button>${tagsOn()?'<button type="button" class="btn small" data-act="bulk-tag" data-v="add">＋ Tag</button><button type="button" class="btn small" data-act="bulk-tag" data-v="remove">− Tag</button>':''}
     ${editionsOn()?'<button type="button" class="btn small" data-act="bulk-link" title="Count the selected books as one book with several editions">Link as editions</button>':''}${ao3On()?'<button type="button" class="btn small" data-ao3="bulk" title="Fill in the selected AO3 stories (title, author, words, fandom, summary) from their links">Fetch from AO3</button>':''}${coverFetchOn()?'<button type="button" class="btn small" data-act="bulk-covers" title="Look up covers online for the selected books that have none">Find covers</button>':''}<button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
 }
 const updateBulkBar=()=>{const w=$('#bulkwrap');if(w)w.innerHTML=bulkBar();};
 const pickedEntries=()=>[...picked].map(byId).filter(Boolean);
-const plural=(n,w)=>n+' '+w+(n===1?'':'s');
+const plural=(n,w,pl)=>n+' '+(n===1?w:(pl||w+'s'));
 function bulkStatus(v){const snap=undoSnap(),t=now(),es=pickedEntries();es.forEach(e=>{e.status=v;e.updated=t;});changed();offerUndo('Set '+plural(es.length,'book')+' to '+statusLabel(v),snap);}
 function bulkList(v){
   const snap=undoSnap();   // before a new list is created, so undo removes it too
@@ -1614,13 +1670,14 @@ function bulkList(v){
   if(lid==='__new'){const n=prompt('Name for the new list?');if(!n||!n.trim()){render();return;}lid=ensureList(n);}
   const es=pickedEntries();es.forEach(e=>setEntryList(e.id,lid,true));changed();offerUndo('Added '+plural(es.length,'book')+' to “'+listById(lid).name+'”',snap);
 }
-function bulkGenre(mode){
-  const raw=prompt((mode==='add'?'Genre to add to ':'Genre to remove from ')+plural(picked.size,'book')+'? (comma-separate several)');
+function bulkGenre(mode,field){
+  field=field||'genres';const word=field==='tags'?'Tag':'Genre';
+  const raw=prompt((mode==='add'?word+' to add to ':word+' to remove from ')+plural(picked.size,'book')+'? (comma-separate several)');
   const gs=[...new Set((raw||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean))];if(!gs.length)return;
   let n=0;const t=now(),snap=undoSnap();
-  pickedEntries().forEach(e=>{const before=e.genres.join('|');e.genres=mode==='add'?[...new Set([...e.genres,...gs])]:e.genres.filter(g=>!gs.includes(g));if(e.genres.join('|')!==before){e.updated=t;n++;}});
+  pickedEntries().forEach(e=>{const cur=e[field]||[],before=cur.join('|');e[field]=mode==='add'?[...new Set([...cur,...gs])]:cur.filter(g=>!gs.includes(g));if(e[field].join('|')!==before){e.updated=t;n++;}});
   if(!n){toast('Nothing changed');return;}
-  changed();offerUndo((mode==='add'?'Added':'Removed')+' genre on '+plural(n,'book'),snap);
+  changed();offerUndo((mode==='add'?'Added':'Removed')+' '+word.toLowerCase()+' on '+plural(n,'book'),snap);
 }
 function bulkDelete(){
   const ids=[...picked].filter(byId);if(!ids.length)return;
@@ -1643,6 +1700,7 @@ function previewHTML(e){
   ${feat('progress')?progressButtons(e):`<div class="prog">${quickState(e)}</div>`}
   ${quickList(e)?`<div class="prog">${quickList(e)}</div>`:''}
   ${e.genres.length?`<div class="chips" style="margin-top:.8rem">${e.genres.map(g=>chipBtn('genre',g,esc(g),'genre')).join('')}</div>`:''}
+  ${tagsOn()&&(e.tags||[]).length?`<div class="chips" style="margin-top:.4rem">${e.tags.map(t=>chipBtn('tag',t,esc(t),'tag')).join('')}</div>`:''}
   ${runs?`<p class="muted small" style="margin:.8rem 0 0">${esc(runs)}</p>`:''}
   ${rows?`<dl class="kv" style="margin-top:.8rem">${rows}</dl>`:''}
   ${e.notes?`<h3 style="margin-top:1rem">Notes</h3><div class="notes">${renderNotes(e.notes)}</div>`:''}
@@ -1727,6 +1785,38 @@ function listeningHTML(){
 }
 const listenedIn=ents=>ents.filter(e=>isAudio(e)&&e.status==='finished');
 
+/* ---------- tags panel (flag: tags): genres are broad categories, tags are free labels ---------- */
+let tq='';
+const labelCounts=f=>{const m=new Map();db.entries.forEach(e=>(e[f]||[]).forEach(g=>m.set(g,(m.get(g)||0)+1)));return m;};
+function moveLabel(v,from,to){let n=0;const t=now();db.entries.forEach(e=>{if(!(e[from]||[]).includes(v))return;e[from]=e[from].filter(x=>x!==v);e[to]=e[to]||[];if(!e[to].includes(v))e[to].push(v);e.updated=t;n++;});return n;}
+function renameTag(from,to){let n=0;const t=now();db.entries.forEach(e=>{if(!(e.tags||[]).includes(from))return;e.tags=[...new Set(e.tags.map(x=>x===from?to:x).filter(Boolean))];e.updated=t;n++;});return n;}
+function tlistHTML(){
+  const counts=labelCounts('tags'),q=tq.trim().toLowerCase();
+  const rows=[...counts.entries()].filter(([t])=>!q||t.includes(q)).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+  const shown=rows.slice(0,300);
+  return rows.length?`<ul class="runs">${shown.map(([t,c])=>`<li><b>${esc(t)}</b> <span class="muted">${c}</span> <button type="button" class="btn small" data-tagx="show" data-v="${esc(t)}">Show</button> <button type="button" class="btn small" data-tagx="rename" data-v="${esc(t)}">Rename</button> <button type="button" class="btn small" data-tagx="togenre" data-v="${esc(t)}">Make it a genre</button> <button type="button" class="btn small danger" data-tagx="del" data-v="${esc(t)}">Remove</button></li>`).join('')}</ul>${rows.length>shown.length?`<p class="muted small">Showing the 300 most used of ${rows.length}. Search to find others.</p>`:''}`:'<p class="muted">No tags yet.</p>';
+}
+function tagsPanel(){
+  if(!tagsOn())return '';
+  const counts=labelCounts('tags'),ficN=db.entries.filter(e=>e.type==='fanfic'&&e.genres.length).length;
+  return `<div class="panel"><h2>Tags (${counts.size})</h2>
+    <p class="muted" style="margin-top:0">Genres are broad categories (fantasy, sci-fi). Tags are free labels: tropes, pairings, moods. Each entry has both. Move a label from one to the other here, or use <i>Make it a tag</i> in the genre manager.</p>
+    ${ficN?`<p><button type="button" class="btn" data-tagx="fic">Move genres to tags on ${plural(ficN,'fanfiction entry','fanfiction entries')}</button></p>`:''}
+    <label>Find a tag<input type="search" id="tq" value="${esc(tq)}" placeholder="Filter tags…"></label>
+    <div id="tlist">${tlistHTML()}</div></div>`;
+}
+document.addEventListener('input',ev=>{if(ev.target.id==='tq'){tq=ev.target.value;const l=$('#tlist');if(l)l.innerHTML=tlistHTML();}});
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-tagx]');if(!b)return;
+  const a=b.dataset.tagx,v=b.dataset.v;
+  if(a==='show'){F=defaults();F.include.tag=[v];lastView=null;location.hash='#/library';return;}
+  const snap=undoSnap();
+  if(a==='rename'){const nn=prompt('Rename the tag “'+v+'” to…',v),t=(nn||'').trim().toLowerCase();if(!t||t===v)return;if(labelCounts('tags').has(t)&&!confirm('“'+t+'” already exists. Merge “'+v+'” into it?'))return;const n=renameTag(v,t);changed();offerUndo('Renamed on '+plural(n,'book'),snap);}
+  else if(a==='del'){const c=labelCounts('tags').get(v)||0;if(!snap&&!confirm('Remove the tag “'+v+'” from '+plural(c,'book')+'? The books stay.'))return;const n=renameTag(v,'');changed();offerUndo('Removed “'+v+'” from '+plural(n,'book'),snap);}
+  else if(a==='togenre'){const n=moveLabel(v,'tags','genres');changed();offerUndo('Moved “'+v+'” to genres on '+plural(n,'book'),snap);}
+  else if(a==='tomove'){const n=moveLabel(v,'genres','tags');changed();offerUndo('Moved “'+v+'” to tags on '+plural(n,'book'),snap);}
+  else if(a==='fic'){let n=0;const t=now();db.entries.forEach(e=>{if(e.type!=='fanfic'||!e.genres.length)return;e.tags=[...new Set([...(e.tags||[]),...e.genres])];e.genres=[];e.updated=t;n++;});changed();offerUndo('Moved genres to tags on '+plural(n,'entry','entries'),snap);}
+});
 /* ---------- tidy up: genres and duplicates (flags: genre_manager, duplicates) ---------- */
 let gq='',gsel=new Set();
 const tidyOn=()=>feat('genre_manager')||feat('duplicates');
@@ -1753,7 +1843,7 @@ function genreSuggestions(){
 function glistHTML(){
   const counts=genreCounts(),q=gq.trim().toLowerCase();
   const rows=[...counts.entries()].filter(([g])=>!q||g.includes(q)).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
-  return rows.length?`<ul class="runs">${rows.map(([g,c])=>`<li><label style="display:inline-flex;gap:.5rem;align-items:center;font-weight:400"><input type="checkbox" style="width:auto;min-height:0" data-change="gsel" data-v="${esc(g)}"${gsel.has(g)?' checked':''}> ${esc(g)}</label> <span class="muted">${c}</span> <button type="button" class="btn small" data-act="gen-rename" data-v="${esc(g)}">Rename</button> <button type="button" class="btn small" data-act="gen-filter" data-v="${esc(g)}">Show books</button> <button type="button" class="btn small danger" data-act="gen-delete" data-v="${esc(g)}">Delete</button></li>`).join('')}</ul>`:'<p class="muted">No genres match.</p>';
+  return rows.length?`<ul class="runs">${rows.map(([g,c])=>`<li><label style="display:inline-flex;gap:.5rem;align-items:center;font-weight:400"><input type="checkbox" style="width:auto;min-height:0" data-change="gsel" data-v="${esc(g)}"${gsel.has(g)?' checked':''}> ${esc(g)}</label> <span class="muted">${c}</span> <button type="button" class="btn small" data-act="gen-rename" data-v="${esc(g)}">Rename</button> <button type="button" class="btn small" data-act="gen-filter" data-v="${esc(g)}">Show books</button>${tagsOn()?` <button type="button" class="btn small" data-tagx="tomove" data-v="${esc(g)}">Make it a tag</button>`:''} <button type="button" class="btn small danger" data-act="gen-delete" data-v="${esc(g)}">Delete</button></li>`).join('')}</ul>`:'<p class="muted">No genres match.</p>';
 }
 function genresPanel(){
   const counts=genreCounts(),sug=genreSuggestions();
@@ -1802,7 +1892,7 @@ function mergeEntries(keepId,removeIds){
     if(keep.stars==null)keep.stars=o.stars;
     if(!keep.feeling)keep.feeling=o.feeling;if(!keep.mix)keep.mix=o.mix;
     if((rank[o.status]||0)>(rank[keep.status]||0))keep.status=o.status;
-    keep.genres=[...new Set([...keep.genres,...o.genres])];
+    keep.genres=[...new Set([...keep.genres,...o.genres])];keep.tags=[...new Set([...(keep.tags||[]),...(o.tags||[])])];
     keep.listIds=[...new Set([...(keep.listIds||[]),...(o.listIds||[])])];
     keep.links=[...keep.links,...o.links.filter(l=>!keep.links.some(x=>x.to===l.to&&x.rel===l.rel))];
     keep.details=keep.details||{};
@@ -1874,10 +1964,10 @@ function coverFile(e){
   return m?'covers/'+e.id+'.'+(m[1].toLowerCase()==='jpeg'?'jpg':m[1].toLowerCase().replace(/[^a-z0-9]/g,'')):'';
 }
 function entriesCSV(){
-  const head=['Title','Type','Creator','Status','Stars','Feeling','Mixed rating','Genres','Franchise','Lists','Series / volume','First started','Last finished','Dated runs','Pages','Narrator','Audiobook hours','Format','Link','Cover file','Notes','Added','Updated','Edition group','Id'];
+  const head=['Title','Type','Creator','Status','Stars','Feeling','Mixed rating','Genres','Tags','Franchise','Lists','Series / volume','First started','Last finished','Dated runs','Pages','Narrator','Audiobook hours','Format','Link','Cover file','Notes','Added','Updated','Edition group','Id'];
   const rows=[...db.entries].sort(byTitle).map(e=>{
     const d=e.details||{},starts=e.dates.map(r=>r.start).filter(Boolean).sort(),ends=e.dates.map(r=>r.end).filter(Boolean).sort();
-    return [e.title,(TYPES[e.type]||TYPES.book).label,e.creator,statusLabel(e.status),e.stars==null?'':e.stars,(feelOf(e.feeling)||{}).label||'',mixCell(e),e.genres.join('; '),
+    return [e.title,(TYPES[e.type]||TYPES.book).label,e.creator,statusLabel(e.status),e.stars==null?'':e.stars,(feelOf(e.feeling)||{}).label||'',mixCell(e),e.genres.join('; '),(e.tags||[]).join('; '),
       (frById(e.franchiseId)||{}).name||'',(e.listIds||[]).map(i=>(listById(i)||{}).name).filter(Boolean).join('; '),d.series||'',starts[0]||'',ends[ends.length-1]||'',e.dates.length,d.pages||'',d.narrator||'',d.audioHours||'',d.format||'',e.url||'',coverFile(e),e.notes,e.created,e.updated,e.workId||'',e.id];
   });
   return '﻿'+[head,...rows].map(r=>r.map(csvCell).join(',')).join('\r\n')+'\r\n';
@@ -2106,6 +2196,7 @@ function cardHTML(e){
     ${(fr||p||d)?`<div class="meta muted">${fr?`❦ ${esc(fr)}`:''} ${p?`· ${esc(p)}`:''} ${d?`· ${fmtDate(d)}`:''}</div>`:''}
     ${editionNote(e)}
     ${e.genres.length?`<div class="chips" style="margin-top:.4rem">${genreSpans(e)}</div>`:''}
+    ${tagSpans(e)?`<div class="chips" style="margin-top:.3rem">${tagSpans(e)}</div>`:''}
   </a>`;
 }
 function bars(rows){
@@ -2177,7 +2268,7 @@ function viewHome(){
 }
 function matches(e,f){
   const years=entryYears(e);
-  const vals={genre:e.genres,year:years.map(String),type:[e.type],status:[e.status],franchise:[e.franchiseId],stars:e.stars==null?[]:[String(e.stars)],feeling:[e.feeling],mix:[e.mix],list:e.listIds||[]};
+  const vals={genre:e.genres,tag:tagsOn()?(e.tags||[]):[],year:years.map(String),type:[e.type],status:[e.status],franchise:[e.franchiseId],stars:e.stars==null?[]:[String(e.stars)],feeling:[e.feeling],mix:[e.mix],list:e.listIds||[]};
   for(const [k,values] of Object.entries(vals)){
     if((f.exclude[k]||[]).some(x=>values.includes(x)))return false;
     const inc=f.include[k]||[];
@@ -2192,7 +2283,7 @@ function filteredWith(F){   // F here is the filter being applied (the parameter
   const list=db.entries.filter(e=>{
     if(!matches(e,F))return false;
     if(q){
-      const hay=[e.title,e.creator,frName(e),e.genres.join(' '),e.notes,TYPES[e.type].label,Object.values(e.details||{}).join(' '),e.dates.map(r=>r.note).join(' ')].join(' ').toLowerCase();
+      const hay=[e.title,e.creator,frName(e),e.genres.join(' '),(e.tags||[]).join(' '),e.notes,TYPES[e.type].label,Object.values(e.details||{}).join(' '),e.dates.map(r=>r.note).join(' ')].join(' ').toLowerCase();
       if(!q.split(/\s+/).every(w=>hay.includes(w)))return false;
     }
     return true;
@@ -2213,8 +2304,9 @@ function viewLibrary(){
   const frs=[...db.franchises].sort(byName);
   const genres=[...new Set(db.entries.flatMap(e=>e.genres))].sort();
   const years=allYears();
-  const facets={type:['Type',TYPE_KEYS.map(k=>[k,TYPES[k].label])],status:['Status',STATUSES],franchise:['Franchise',frs.map(x=>[x.id,x.name])],genre:['Genre',genres.map(x=>[x,x])],feeling:['Feeling',FEELINGS.map(x=>[x.k,x.label])],mix:[(mixScale()||{}).name||'Mixed rating',mixOpts().map(x=>[x.k,x.label])],stars:['Stars',STAR_STEPS.map(x=>[String(x),x+' ★'])],year:['Year',years.map(x=>[String(x),x])]};
+  const facets={type:['Type',TYPE_KEYS.map(k=>[k,TYPES[k].label])],status:['Status',STATUSES],franchise:['Franchise',frs.map(x=>[x.id,x.name])],genre:['Genre',genres.map(x=>[x,x])],tag:['Tag',[...new Set(db.entries.flatMap(e=>e.tags||[]))].sort().map(x=>[x,x])],feeling:['Feeling',FEELINGS.map(x=>[x.k,x.label])],mix:[(mixScale()||{}).name||'Mixed rating',mixOpts().map(x=>[x.k,x.label])],stars:['Stars',STAR_STEPS.map(x=>[String(x),x+' ★'])],year:['Year',years.map(x=>[String(x),x])]};
   if(!mixScale())delete facets.mix;
+  if(!tagsOn()||!facets.tag[1].length)delete facets.tag;
   if(feat('lists')&&db.lists.length)facets.list=['List',[...db.lists].sort(byName).map(l=>[l.id,l.name])];
   const chips=[];
   const groups=Object.entries(facets).map(([k,[label,opts]])=>{
@@ -2256,6 +2348,7 @@ function viewEntry(id){
     <div class="muted">${esc(T.label)}${e.creator?` · ${esc(T.creator)}: ${esc(e.creator)}`:''}</div></div></div>
     <div class="meta" style="margin:.7rem 0">${statusBadge(e.status)} ${fr?(feat('franchises')?`<a href="#/franchise/${fr.id}">❦ ${esc(fr.name)}</a>`:`<span>❦ ${esc(fr.name)}</span>`):''} ${progressText(e)?`<span class="muted">· ${esc(progressText(e))}</span>`:''} ${feat('covers')&&safeUrl(e.url)?`<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">Open link ↗</a>`:''}</div>
     ${e.genres.length?`<div class="chips">${e.genres.map(g=>`<span class="chip genre">${esc(g)}</span>`).join('')}</div>`:''}
+    ${tagsOn()&&(e.tags||[]).length?`<div class="chips" style="margin-top:.4rem">${e.tags.map(t=>`<span class="chip tag">${esc(t)}</span>`).join('')}</div>`:''}
     <div class="rate-grid" style="margin-top:.9rem">
       <div class="rate-box"><small>Stars</small>${e.stars!=null?starsHTML(e.stars)+` ${e.stars}/5`:'<span class="muted">not rated</span>'}</div>
       <div class="rate-box"><small>Feeling</small>${feelOf(e.feeling)?feelOf(e.feeling).emoji+' '+feelOf(e.feeling).label:'<span class="muted">—</span>'}</div>
@@ -2334,6 +2427,7 @@ function viewStats(){
   const feels=FEELINGS.map(f=>[f.emoji+' '+f.label,E.filter(e=>e.feeling===f.k).length]);
   const mixBars=mixOpts().map(f=>[esc((f.emoji?f.emoji+' ':'')+f.label),E.filter(e=>e.mix===f.k).length]);
   const genres=topN(countBy(W.flatMap(e=>e.genres),g=>g),10).map(([g,c])=>[esc(g),c]);
+  const tagsTop=tagsOn()?topN(countBy(W.flatMap(e=>e.tags||[]),g=>g),10).map(([g,c])=>[esc(g),c]):[];
   const frs=topN(countBy(W,e=>frName(e)),8).map(([g,c])=>[esc(g),c]);
   const years=allYears().map(y=>[String(y),W.filter(e=>entryYears(e).includes(y)).length]);
   const avgType=TYPE_KEYS.map(k=>{const r=rated.filter(e=>e.type===k);return r.length?`<li>${TYPES[k].icon} ${TYPES[k].label}: <b>${(r.reduce((s,e)=>s+e.stars,0)/r.length).toFixed(2)}</b> ★ (${r.length})</li>`:'';}).join('');
@@ -2352,7 +2446,7 @@ function viewStats(){
     ${box('By type',bars(types))}${box('By status',bars(statuses))}
     ${box('Stars',bars(stars))}${box('Feelings',bars(feels))}
     ${mixScale()?box(esc(mixScale().name),bars(mixBars)):''}${box('Average stars by type',avgType?`<ul>${avgType}</ul>`:'<p class="muted">No ratings yet.</p>')}
-    ${genres.length?box('Top genres',bars(genres)):''}${frs.length?box('Biggest franchises',bars(frs)):''}
+    ${genres.length?box('Top genres',bars(genres)):''}${tagsTop.length?box('Top tags',bars(tagsTop)):''}${frs.length?box('Biggest franchises',bars(frs)):''}
     ${years.length?box('Entries by year',bars(years)):''}
     ${feat('stats_plus')?statsPlusHTML():''}
     ${feat('listening_stats')?listeningHTML():''}
@@ -2434,6 +2528,8 @@ function viewSettings(){
   ${exportPanel()}
   ${importPanel()}
   ${fanficMovePanel()}
+  ${tagsPanel()}
+  ${coverAutoPanel()}
   ${ao3AutoPanel()}
   ${tagRulesPanel()}
   <div class="panel"><h2>Look &amp; readability</h2>
@@ -2449,9 +2545,9 @@ function viewSettings(){
 }
 
 /* ---------- editor ---------- */
-function newDraft(){return {id:'',type:'book',title:'',creator:'',franchise:'',genres:'',status:'planned',stars:null,feeling:'',mix:'',dates:[],details:{},notes:'',links:[],created:''};}
+function newDraft(){return {id:'',type:'book',title:'',creator:'',franchise:'',genres:'',tags:'',status:'planned',stars:null,feeling:'',mix:'',dates:[],details:{},notes:'',links:[],created:''};}
 function openEditor(id){
-  if(id){const e=byId(id);if(!e)return;ed=JSON.parse(JSON.stringify(e));ed.franchise=frName(e);ed.genres=e.genres.join(', ');}
+  if(id){const e=byId(id);if(!e)return;ed=JSON.parse(JSON.stringify(e));ed.franchise=frName(e);ed.genres=e.genres.join(', ');ed.tags=(e.tags||[]).join(', ');}
   else ed=newDraft();
   edInitial=JSON.stringify(ed);
   const o=$('#overlay');o.hidden=false;paintEditor();
@@ -2474,6 +2570,7 @@ function editorHTML(){
   const gcount=countBy(db.entries.flatMap(e=>e.genres),g=>g);
   const have=d.genres.split(',').map(s=>s.trim().toLowerCase());
   const gsug=topN(gcount,12).map(x=>x[0]).filter(g=>!have.includes(g));
+  const tcount=countBy(db.entries.flatMap(e=>e.tags||[]),g=>g),thave=String(d.tags||'').split(',').map(x=>x.trim().toLowerCase()),tsug=topN(tcount,12).map(x=>x[0]).filter(g=>!thave.includes(g));
   const fld=f=>{
     const v=d.details[f.k]===undefined?'':d.details[f.k];
     if(f.kind==='select')return `<label>${esc(f.label)}<select name="d_${f.k}"><option value="">—</option>${f.options.map(o=>opt(o,o,v)).join('')}</select></label>`;
@@ -2494,6 +2591,7 @@ function editorHTML(){
       <label>Genres (comma separated)<input name="genres" type="text" value="${esc(d.genres)}"></label>
     </div>
     ${gsug.length?`<div class="chips" style="margin:-.4rem 0 .9rem"><span class="muted small">Used before:</span>${gsug.map(g=>`<button type="button" class="chip genre" data-act="ed-genre" data-v="${esc(g)}">＋ ${esc(g)}</button>`).join('')}</div>`:''}
+    ${tagsOn()?`<label>Tags (comma separated)<input name="tags" type="text" value="${esc(d.tags||'')}" placeholder="tropes, pairings, moods…"></label>${tsug.length?`<div class="chips" style="margin:.3rem 0 .9rem"><span class="muted small">Tags used before:</span>${tsug.map(g=>`<button type="button" class="chip tag" data-act="ed-tag" data-v="${esc(g)}">＋ ${esc(g)}</button>`).join('')}</div>`:''}`:''}
     <div class="row2"><label>Status<select name="status">${STATUSES.map(s=>opt(s[0],s[1],d.status)).join('')}</select></label></div>
 
     <fieldset><legend>Ratings</legend>
@@ -2530,7 +2628,7 @@ function editorHTML(){
 function syncDraft(){
   const f=$('#editor');if(!f||!ed)return;
   const g=n=>{const el=f.elements[n];return el?el.value:'';};
-  ed.title=g('title');ed.creator=g('creator');ed.franchise=g('franchise');ed.genres=g('genres');ed.status=g('status');ed.notes=g('notes');
+  ed.title=g('title');ed.creator=g('creator');ed.franchise=g('franchise');ed.genres=g('genres');if(f.elements.tags)ed.tags=g('tags');ed.status=g('status');ed.notes=g('notes');
   if(f.elements.url)ed.url=g('url').trim();
   ed.dates=ed.dates.map((r,i)=>({start:g('rs'+i),end:g('re'+i),note:g('rn'+i)}));
   ed.links=ed.links.map((l,i)=>({rel:g('lr'+i),to:g('lt'+i)}));
@@ -2545,10 +2643,11 @@ function saveEditor(){
   const before=JSON.stringify(db);
   const fid=d.franchise.trim()?ensureFranchise(d.franchise):'';
   const genres=[...new Set(d.genres.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean))];
+  const prevE=db.entries.find(e=>e.id===d.id)||{},tags=tagsOn()?[...new Set(String(d.tags||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean))]:(prevE.tags||[]);
   const keep=new Set(TYPES[d.type].fields.map(f=>f.k));
   const details={};Object.keys(d.details).forEach(k=>{if(keep.has(k))details[k]=d.details[k];});
   const prev=db.entries.find(e=>e.id===d.id)||{};
-  const rec=Object.assign({},prev,{id:d.id||uid(),type:d.type,title:d.title.trim(),creator:d.creator.trim(),franchiseId:fid,genres,status:d.status,
+  const rec=Object.assign({},prev,{id:d.id||uid(),type:d.type,title:d.title.trim(),creator:d.creator.trim(),franchiseId:fid,genres,tags,status:d.status,
     stars:d.stars,feeling:d.feeling,mix:d.mix,dates:d.dates.filter(r=>r.start||r.end||r.note),details,notes:d.notes,
     links:d.links.filter(l=>l.to),cover:d.cover||'',url:normalizeUrl(d.url),listIds:prev.listIds||[],workId:prev.workId||'',created:d.created||now(),updated:now()});
   const i=db.entries.findIndex(e=>e.id===rec.id);
@@ -2599,6 +2698,7 @@ function parseLibrary(text){
     if(!STATUSES.some(x=>x[0]===e.status))e.status='planned';
     e.mix=MIX_KEYS.includes(e.mix)?e.mix:'';if(!str(e.food))delete e.food;
     e.genres=(Array.isArray(e.genres)?e.genres:[]).filter(str);
+    e.tags=(Array.isArray(e.tags)?e.tags:[]).filter(str);
     e.links=(Array.isArray(e.links)?e.links:[]).filter(l=>obj(l)&&id(l.to)&&Object.prototype.hasOwnProperty.call(REL,l.rel));
     e.dates=(Array.isArray(e.dates)?e.dates:[]).filter(obj).map(r=>({start:S(r.start),end:S(r.end),note:S(r.note)}));
     const det={};if(obj(e.details))for(const [k,v] of Object.entries(e.details))if(str(v)||(typeof v==='number'&&Number.isFinite(v)))det[k]=v;e.details=det;
@@ -2739,6 +2839,7 @@ document.addEventListener('click',ev=>{
     case 'ed-star':syncDraft();ed.stars=ed.stars===Number(v)?null:Number(v);paintEditor();break;
     case 'ed-feel':syncDraft();ed.feeling=ed.feeling===v?'':v;paintEditor();break;
     case 'ed-mix':syncDraft();ed.mix=ed.mix===v?'':v;paintEditor();break;
+    case 'ed-tag':syncDraft();ed.tags=(String(ed.tags||'').trim().replace(/,\s*$/,'')+(String(ed.tags||'').trim()?', ':'')+v);paintEditor();break;
     case 'ed-genre':syncDraft();ed.genres=(ed.genres.trim().replace(/,\s*$/,'')+(ed.genres.trim()?', ':'')+v);paintEditor();break;
     case 'ed-addrun':syncDraft();ed.dates.push({start:'',end:'',note:''});paintEditor();break;
     case 'ed-delrun':syncDraft();ed.dates.splice(i,1);paintEditor();break;
@@ -2810,11 +2911,13 @@ document.addEventListener('click',ev=>{
     case 'preview-close':closePreview();break;
     case 'qstar':setStars(el.dataset.id,el.dataset.v);break;
     case 'chip-filter':{const k=el.dataset.k,cur=F.include[k]||[];F.include[k]=cur.includes(v)?cur.filter(x=>x!==v):[...cur,v];F.exclude[k]=(F.exclude[k]||[]).filter(x=>x!==v);if(route().p!=='library')location.hash='#/library';render();break;}
+    case 'more-tags':if(tagOpen.has(el.dataset.id))tagOpen.delete(el.dataset.id);else tagOpen.add(el.dataset.id);render();break;
     case 'more-genres':if(genreOpen.has(el.dataset.id))genreOpen.delete(el.dataset.id);else genreOpen.add(el.dataset.id);render();break;
     case 'lib-more':libLimit+=500;render();break;
     case 'sel-all':libShown.forEach(id=>picked.add(id));render();break;
     case 'sel-none':picked.clear();render();break;
     case 'bulk-genre':bulkGenre(v);break;
+    case 'bulk-tag':bulkGenre(v,'tags');break;
     case 'bulk-delete':bulkDelete();break;
     case 'ed-findcover':{syncDraft();if(!String(ed.title||'').trim()){toast('Add a title first');break;}toast('Looking…');fetchCoverFor(ed).then(c=>{if(!ed)return;if(c){ed.cover=c;paintEditor();toast('Cover found');}else toast('No cover found for that title');}).catch(x=>toast(x.message));break;}
     case 'bulk-covers':bulkCovers();break;
@@ -2841,7 +2944,7 @@ document.addEventListener('change',ev=>{
   const k=el.dataset.k,c=el.dataset.change;
   if(c==='facet'){const side=el.dataset.side,v=el.dataset.v,other=side==='include'?'exclude':'include';F[side][k]=(F[side][k]||[]).filter(x=>x!==v);if(el.checked){F[side][k].push(v);F[other][k]=(F[other][k]||[]).filter(x=>x!==v);}render();}
   else if(c==='filter'){F[k]=el.value;render();}
-  else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}if(k==='mixScale')render();if(k==='ao3Auto'){ao3NextAt=0;ao3PaintStatus();}}
+  else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}if(k==='mixScale')render();if(k==='ao3Auto'){ao3NextAt=0;ao3PaintStatus();}if(k==='coverAuto'){coverNextAt=0;coverStat.stopped=false;coverPaintStatus();}}
   else if(c==='mixcustom'){const f=el.dataset.f,q=el.dataset.q,cm=settings.customMix=settings.customMix||{name:'',axes:['',''],opts:{}};cm.axes=cm.axes||['',''];cm.opts=cm.opts||{};
     const v=el.value;if(f==='name')cm.name=v.slice(0,40);else if(f==='axis0')cm.axes[0]=v.slice(0,40);else if(f==='axis1')cm.axes[1]=v.slice(0,40);
     else if(MIX_KEYS.includes(q)){cm.opts[q]=cm.opts[q]||{emoji:'',label:'',hint:''};cm.opts[q][f]=v.slice(0,f==='emoji'?8:f==='label'?30:80);}
