@@ -11,7 +11,12 @@ const FLAG_DEFAULTS = {
   wrapped: true,          // Year wrapped page
   file_link: true,        // Linked library file (desktop) and Link / Share backup (Android)
   shortcuts: true,        // Keyboard shortcuts
-  drag_drop_import: true  // Drop a backup file on the page to import it
+  drag_drop_import: true, // Drop a backup file on the page to import it
+  // New functionality: off until switched on per account (admin page or `node flags.js on <flag> <user>`).
+  version_history: false, // Restore earlier versions of the library from the server
+  offline_app: false,     // Installable web app that opens offline
+  quick_add: false,       // One-line quick add on Home
+  sync_notices: false     // Say what a sync merged and when edits conflicted
 };
 
 const SCHEMA = `

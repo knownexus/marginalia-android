@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-IWt412axPUiPtlEUkK1R3v8DB247jf/EFhIML6HLXEo='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-2CM09ws5y8fxCtmv5rDlqspnXMzbln9JFs5UlsAPtaY='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -181,6 +181,7 @@ html,#overlay{scroll-padding-block:12px}
       <a href="#/franchises" data-nav="franchises">Franchises</a>
       <a href="#/stats" data-nav="stats">Stats</a>
       <a href="#/wrapped" data-nav="wrapped">Year wrapped</a>
+      <a href="#/admin" data-nav="admin" hidden>Admin</a>
       <a href="#/settings" data-nav="settings">Settings &amp; files</a>
     </nav>
   </div>
@@ -354,19 +355,24 @@ async function restoreLink(){
 /* ---------- account & sync (optional; the library always works offline) ---------- */
 const API_BASE=/^https?:$/.test(location.protocol)?location.origin:'https://web-production-ac96f798.up.railway.app';
 const LS_SYNC='marginalia.sync.v1';
-let sync=Object.assign({user:'',token:'',owner:'',last:'',mustChange:false,features:null},loadJSON(LS_SYNC)||{});
-let syncStatus='',syncing=false,syncAgain=false,syncTimer=null,skipSchedule=false,deferredRender=false;
+let sync=Object.assign({user:'',token:'',owner:'',last:'',mustChange:false,features:null,isAdmin:false,log:[]},loadJSON(LS_SYNC)||{});
+let syncStatus='',syncing=false,syncAgain=false,syncTimer=null,skipSchedule=false,deferredRender=false,forceSnapshot=false;
 let authMode='login',authErr='',authBusy=false,pwOpen=false;
 /* Feature flags. These are the defaults; a signed-in account gets its own values from the server
    (per-user overrides > server default > these). Current functionality is on. To ship something new to
    chosen users only, add it here as false, gate the feature with feat('name'), and turn it on for them. */
-const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true};
-const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import'};
+const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
+  version_history:false,offline_app:false,quick_add:false,sync_notices:false};
+const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
-function applyFeatures(f){
-  if(!f||typeof f!=='object'||canon(f)===canon(sync.features||{}))return;
-  sync.features=f;saveSync();
+function applyFeatures(f,isAdmin){
+  const fChanged=!!f&&typeof f==='object'&&canon(f)!==canon(sync.features||{});
+  const aChanged=isAdmin!==undefined&&!!isAdmin!==!!sync.isAdmin;
+  if(!fChanged&&!aChanged)return;
+  if(fChanged)sync.features=f;
+  if(aChanged)sync.isAdmin=!!isAdmin;
+  saveSync();setupPWA();
   if(editingInApp())deferredRender=true;else render();
 }
 const saveSync=()=>{try{localStorage.setItem(LS_SYNC,JSON.stringify(sync));}catch(e){}};
@@ -382,7 +388,7 @@ async function api(method,path,body,rev){
   let j=null;try{j=await r.json();}catch(e){}
   return {status:r.status,body:j||{}};
 }
-function signedOut(msg){sync.token='';sync.user='';sync.mustChange=false;sync.features=null;saveSync();clearTimeout(syncTimer);setSync(msg||'');render();}
+function signedOut(msg){sync.token='';sync.user='';sync.mustChange=false;sync.features=null;sync.isAdmin=false;saveSync();setupPWA();clearTimeout(syncTimer);setSync(msg||'');render();}
 function needPassword(){sync.mustChange=true;saveSync();clearTimeout(syncTimer);setSync('Choose a new password to continue syncing');render();}
 async function syncNow(){
   if(!sync.token)return;
@@ -395,18 +401,19 @@ async function syncNow(){
       if(g.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
       if(g.status===403&&g.body.code==='must_change')return needPassword();
       if(g.status!==200)throw Error(g.body.error||'Server error '+g.status);
-      applyFeatures(g.body.features);
+      applyFeatures(g.body.features,g.body.isAdmin);
       const remote=g.body.data?normalize(g.body.data):null;
       let merged=db;
       if(remote)merged=mergeData(JSON.parse(JSON.stringify(db)),remote);
-      if(canon(merged)!==canon(db)){db=merged;skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}if(editingInApp())deferredRender=true;else render();}
+      if(canon(merged)!==canon(db)){if(remote&&feat('sync_notices'))noteMerge(describeMerge(db,remote,merged));db=merged;skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}if(editingInApp())deferredRender=true;else render();}
       if(!(remote&&canon(remote)===canon(merged))){
-        const p=await api('PUT','/api/library',{data:merged},g.body.rev);
+        const p=await api('PUT','/api/library'+(forceSnapshot?'?snapshot=1':''),{data:merged},g.body.rev);
+        if(p.status===200)forceSnapshot=false;
         if(p.status===409)continue;
         if(p.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
         if(p.status!==200)throw Error(p.body.error||'Server error '+p.status);
       }
-      sync.last=now();saveSync();
+      sync.last=now();saveSync();rememberBase();
       setSync('Synced '+new Date(sync.last).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
       return;
     }
@@ -436,7 +443,7 @@ async function submitAuth(form){
       }
     }
     if(sync.owner&&sync.owner!==user){db=normalize({});skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}}
-    sync.user=user;sync.owner=user;sync.mustChange=!!r.body.mustChange;sync.features=r.body.features||null;saveSync();authBusy=false;pwOpen=false;
+    sync.user=user;sync.owner=user;sync.mustChange=!!r.body.mustChange;sync.features=r.body.features||null;sync.isAdmin=!!r.body.isAdmin;saveSync();setupPWA();authBusy=false;pwOpen=false;
     if(sync.mustChange){toast('Choose a new password to finish signing in');setSync('Choose a new password to continue syncing');location.hash='#/settings';render();return;}
     toast('Signed in as '+user);render();syncNow();
   }catch(e){authBusy=false;authErr=e instanceof TypeError?'Cannot reach the server. Check your connection.':e.message;render();}
@@ -466,6 +473,172 @@ function accountPanel(){
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sync.token)syncNow();});
 addEventListener('online',()=>{if(sync.token)syncNow();});
 setInterval(()=>{if(sync.token&&!document.hidden)syncNow();},60000);
+/* ---------- installable offline app (flag: offline_app) ---------- */
+let installEvt=null;
+addEventListener('beforeinstallprompt',ev=>{ev.preventDefault();installEvt=ev;if(route().p==='settings'&&!editingInApp())render();});
+addEventListener('appinstalled',()=>{installEvt=null;});
+function setupPWA(){
+  if(!/^https?:$/.test(location.protocol)||!('serviceWorker' in navigator))return;
+  const on=feat('offline_app'),link=document.querySelector('link[rel=manifest]');
+  if(on){
+    if(!link){const l=document.createElement('link');l.rel='manifest';l.href='/manifest.webmanifest';document.head.appendChild(l);
+      const a=document.createElement('link');a.rel='apple-touch-icon';a.href='/icon-192.png';document.head.appendChild(a);}
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  }else{
+    if(link){link.remove();const a=document.querySelector('link[rel=apple-touch-icon]');if(a)a.remove();}
+    navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});
+    if(window.caches)caches.keys().then(ks=>ks.filter(k=>k.startsWith('marginalia-')).forEach(k=>caches.delete(k))).catch(()=>{});
+  }
+}
+async function installApp(){if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice;}catch(e){}installEvt=null;render();}
+
+/* ---------- version history (flag: version_history) ---------- */
+let hist={rows:null,err:'',busy:false};
+const when=d=>new Date(d).toLocaleString([],{dateStyle:'medium',timeStyle:'short'});
+async function loadVersions(){
+  hist.busy=true;hist.err='';render();
+  try{const r=await api('GET','/api/versions');if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);hist.rows=r.body.versions;}
+  catch(e){hist.err=e instanceof TypeError?'Cannot reach the server.':e.message;}
+  hist.busy=false;render();
+}
+async function restoreVersion(id){
+  try{
+    await syncNow();                       // so the server holds your latest edits, and they become a version too
+    const r=await api('GET','/api/versions/'+id);
+    if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);
+    const v=normalize(r.body.data),keep=new Set([...v.entries,...v.franchises].map(x=>x.id));
+    const have=new Set([...db.entries,...db.franchises].map(x=>x.id));
+    const back=[...keep].filter(i=>!have.has(i)).length,gone=[...have].filter(i=>!keep.has(i));
+    if(!confirm('Restore the library as it was on '+when(r.body.asOf)+'?\n\n'+back+' item(s) come back and '+gone.length+' added since then are removed. Your current library is kept as a version, so you can undo this.'))return;
+    const t=now(),deleted=Object.assign({},db.deleted);
+    keep.forEach(i=>delete deleted[i]);gone.forEach(i=>deleted[i]=t);
+    // Restored records get fresh timestamps so every other device accepts them when it syncs.
+    db=normalize({version:1,entries:v.entries.map(e=>Object.assign({},e,{updated:t})),franchises:v.franchises.map(f=>Object.assign({},f,{updated:t})),deleted});
+    skipSchedule=true;try{if(!saveLocal())return;}finally{skipSchedule=false;}
+    forceSnapshot=true;await syncNow();hist.rows=null;render();toast('Library restored');
+    if(feat('version_history'))loadVersions();
+  }catch(e){toast('Could not restore: '+(e instanceof TypeError?'cannot reach the server':e.message));}
+}
+function historyPanel(){
+  if(!sync.token||sync.mustChange||!feat('version_history'))return '';
+  const rows=hist.rows&&(hist.rows.length?`<ul class="runs">${hist.rows.map(v=>`<li><b>${esc(when(v.asOf))}</b> · ${v.entries} entr${v.entries===1?'y':'ies'}, ${v.franchises} franchise${v.franchises===1?'':'s'} <button class="btn small" data-act="restore" data-id="${v.id}">Restore…</button></li>`).join('')}</ul>`:'<p class="muted">No earlier versions yet. The server keeps one every so often while you edit, and always before a change that removes entries.</p>');
+  return `<div class="panel"><h2>Version history</h2><p class="muted">The server keeps recent snapshots of this account's library. Restoring brings back an earlier snapshot on every signed-in device and keeps today's library as another version.</p>
+  <div class="chips"><button class="btn" data-act="versions"${hist.busy?' disabled':''}>${hist.rows?'Refresh versions':'Show versions'}</button></div>
+  ${hist.err?`<p class="small" role="alert" style="color:var(--danger)">${esc(hist.err)}</p>`:''}${rows||''}</div>`;
+}
+
+/* ---------- sync notices (flag: sync_notices) ---------- */
+const LS_BASE='marginalia.sync.base.v1';
+function describeMerge(local,remote,merged){
+  const base=loadJSON(LS_BASE),recs=d=>new Map([...d.entries,...d.franchises].map(r=>[r.id,r])),nm=r=>'“'+(r.title||r.name||'item')+'”';
+  const L=recs(local),R=recs(remote),M=recs(merged);
+  const out={added:0,updated:0,removed:0,conflicts:[]};
+  const both=(l,r,id)=>base&&base[id]&&r&&(l.updated||'')>base[id]&&(r.updated||'')>base[id]&&l.updated!==r.updated;
+  for(const [id,m] of M){
+    const l=L.get(id),r=R.get(id);
+    if(!l){out.added++;continue;}
+    if(canon(l)===canon(m)){if(both(l,r,id))out.conflicts.push(nm(m)+' was edited on both devices. Kept this device\'s newer version.');continue;}
+    out.updated++;
+    if(base&&base[id]&&(l.updated||'')>base[id])out.conflicts.push(nm(m)+' was edited on both devices. Kept the other device\'s newer version.');
+  }
+  for(const [id,l] of L)if(!M.has(id)){out.removed++;if(base&&base[id]&&(l.updated||'')>base[id])out.conflicts.push(nm(l)+' was deleted on another device after you edited it. Your edit was dropped.');}
+  return out;
+}
+function noteMerge(o){
+  const bits=[o.added&&o.added+' new',o.updated&&o.updated+' updated',o.removed&&o.removed+' removed'].filter(Boolean);
+  if(!bits.length&&!o.conflicts.length)return;
+  const text=(bits.length?'Merged from another device: '+bits.join(', ')+'.':'')+(o.conflicts.length?' '+o.conflicts.length+' conflict'+(o.conflicts.length===1?'':'s')+' resolved.':'');
+  sync.log=[{t:now(),text:text.trim(),conflicts:o.conflicts.slice(0,10)}].concat(sync.log||[]).slice(0,25);saveSync();
+  toast(o.conflicts.length?'Sync: '+o.conflicts.length+' conflict'+(o.conflicts.length===1?'':'s')+' resolved, newest edit kept. Details in Settings.':text.trim());
+}
+const rememberBase=()=>{try{localStorage.setItem(LS_BASE,JSON.stringify(Object.fromEntries([...db.entries,...db.franchises].map(r=>[r.id,r.updated||'']))));}catch(e){}};
+function noticesPanel(){
+  if(!feat('sync_notices')||!(sync.log||[]).length)return '';
+  return `<div class="panel"><h2>Recent sync activity</h2><ul class="runs">${sync.log.map(e=>`<li><b>${esc(when(e.t))}</b> ${esc(e.text)}${e.conflicts&&e.conflicts.length?`<ul>${e.conflicts.map(c=>`<li class="small">${esc(c)}</li>`).join('')}</ul>`:''}</li>`).join('')}</ul>
+  <div class="chips"><button class="btn small" data-act="clear-notices">Clear</button></div></div>`;
+}
+
+/* ---------- quick add (flag: quick_add) ---------- */
+const Q_TYPES={book:'book',books:'book',film:'film',movie:'film',tv:'tv',show:'tv',series:'tv',game:'game',online:'online',play:'play',theatre:'play',theater:'play',escape:'escape',room:'escape'};
+const Q_STATUS={planned:'planned',plan:'planned',todo:'planned',want:'planned',wishlist:'planned',ongoing:'ongoing',reading:'ongoing',watching:'ongoing',playing:'ongoing',started:'ongoing',current:'ongoing','in progress':'ongoing',
+  finished:'finished',done:'finished',read:'finished',watched:'finished',played:'finished',completed:'finished',paused:'paused',hold:'paused','on hold':'paused',dropped:'dropped',dnf:'dropped',abandoned:'dropped'};
+function parseQuick(text){
+  const out={title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],franchise:'',date:'',notes:[]};
+  const t=String(text||'').replace(/(^|\s)#([\w-]+)/g,(m,sp,g)=>{out.genres.push(g.toLowerCase());return sp;});
+  const parts=t.split(',').map(x=>x.trim()).filter(Boolean);
+  if(!parts.length)return null;
+  let first=parts.shift();const by=/^(.*?)\s+by\s+(.+)$/i.exec(first);
+  if(by){first=by[1].trim();out.creator=by[2].trim();}
+  out.title=first;let statusSet=false;
+  for(const seg of parts){
+    const k=seg.toLowerCase();let m;
+    if(Q_TYPES[k])out.type=Q_TYPES[k];
+    else if(Q_STATUS[k]){out.status=Q_STATUS[k];statusSet=true;}
+    else if((m=/^(\d(?:\.5)?)\s*(?:\/\s*5|stars?|\*|★)$/.exec(k))&&Number(m[1])<=5)out.stars=Number(m[1]);
+    else if(/^★{1,5}$/.test(seg))out.stars=seg.length;
+    else if((m=/^by\s+(.+)$/i.exec(seg)))out.creator=m[1].trim();
+    else if((m=/^(?:in|franchise:?)\s+(.+)$/i.exec(seg)))out.franchise=m[1].trim();
+    else if(k==='today')out.date=today();
+    else if(k==='yesterday'){const d=new Date();d.setDate(d.getDate()-1);out.date=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+    else if((m=/^(?:on\s+)?(\d{4}-\d{2}-\d{2})$/.exec(k)))out.date=m[1];
+    else out.notes.push(seg);
+  }
+  if(out.date&&!statusSet)out.status='finished';
+  return out;
+}
+function quickSummary(q){
+  if(!q)return 'Type a title, then add details separated by commas: a type (book, film, tv, game…), a status (finished, reading…), a rating (4 stars), #genres, in Franchise, a date (today, 2026-03-12). Press Enter to add.';
+  const T=TYPES[q.type];
+  return [T.icon+' '+T.label,statusLabel(q.status),q.stars!=null?'★'+q.stars:'',q.creator&&'by '+q.creator,q.franchise&&'❦ '+q.franchise,q.genres.map(g=>'#'+g).join(' '),q.date&&fmtDate(q.date),q.notes.length&&'note: '+q.notes.join('; ')].filter(Boolean).join(' · ');
+}
+const quickBar=()=>feat('quick_add')?`<div class="panel"><label for="quick">Quick add</label><input id="quick" type="text" placeholder="Dune by Frank Herbert, book, finished, 4 stars, #scifi" autocomplete="off" aria-describedby="quickprev"><p id="quickprev" class="muted small" style="margin:.5rem 0 0">${esc(quickSummary(null))}</p></div>`:'';
+function addQuick(){
+  const inp=$('#quick'),q=parseQuick(inp&&inp.value);
+  if(!q||!q.title){toast('Type a title first');return;}
+  const t=now(),dates=[];
+  if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});
+  else if(q.status==='ongoing')dates.push({start:q.date||today(),end:'',note:''});
+  db.entries.push({id:uid(),type:q.type,title:q.title,creator:q.creator,franchiseId:q.franchise?ensureFranchise(q.franchise):'',genres:[...new Set(q.genres)],status:q.status,stars:q.stars,feeling:'',food:'',dates,details:{},notes:q.notes.join('\n'),links:[],created:t,updated:t});
+  if(!saveLocal()){db.entries.pop();return;}
+  toast('Added “'+q.title+'”');render();const n=$('#quick');if(n)n.focus();
+}
+
+/* ---------- admin (server-enforced: only accounts marked admin) ---------- */
+let adm={data:null,loading:false,err:'',note:''};
+async function loadAdmin(){
+  adm.loading=true;
+  try{const r=await api('GET','/api/admin/overview');if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);adm.data=r.body;adm.err='';}
+  catch(e){adm.err=e instanceof TypeError?'Cannot reach the server.':e.message;}
+  adm.loading=false;if(route().p==='admin'&&!editingInApp())render();
+}
+async function adminCall(method,path,body,okNote){
+  try{const r=await api(method,path,body);if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);adm.note=okNote||'';return r.body;}
+  catch(e){toast(e instanceof TypeError?'Cannot reach the server':e.message);return null;}
+}
+const ago=d=>{if(!d)return 'never';const m=Math.round((Date.now()-new Date(d))/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago';};
+function viewAdmin(){
+  if(!adm.data&&!adm.loading)loadAdmin();
+  const d=adm.data;
+  if(!d)return `<h1>Admin</h1><div class="panel">${adm.err?`<p role="alert" style="color:var(--danger)">${esc(adm.err)}</p><button class="btn" data-act="adm-reload">Try again</button>`:'<p class="muted">Loading…</p>'}</div>`;
+  const flagNames=[...new Set([...Object.keys(d.flags.code),...Object.keys(d.flags.db),...d.users.flatMap(u=>Object.keys(u.overrides))])].sort();
+  const sel=(cur,attrs)=>`<select ${attrs}>${opt('','Default',cur)}${opt('on','On',cur)}${opt('off','Off',cur)}</select>`;
+  const val=v=>v===undefined?'':v?'on':'off';
+  const codeLabel=f=>f in d.flags.code?(d.flags.code[f]?'on':'off'):'not in code';
+  return `<h1>Admin</h1>
+  ${adm.note?`<div class="panel" role="status"><p style="margin:0">${esc(adm.note)}</p></div>`:''}
+  <div class="panel"><h2>Sign-ups</h2>
+    <p>${d.registrationOpen?`Invite code: <b>${esc(d.inviteCode)}</b>`:'Registration is closed.'}</p>
+    <div class="chips"><button class="btn" data-act="adm-invite" data-v="rotate">New invite code</button>${d.registrationOpen?'<button class="btn" data-act="adm-invite" data-v="close">Close registration</button>':''}</div></div>
+  <h2>Accounts (${d.users.length})</h2>
+  ${d.users.map(u=>`<div class="panel"><h3>${esc(u.username)} ${u.isAdmin?'<span class="badge finished">admin</span>':''} ${u.mustReset?'<span class="badge paused">must change password</span>':''}</h3>
+    <p class="muted small" style="margin:.3rem 0 .6rem">Joined ${esc(fmtDate(String(u.created).slice(0,10)))} · last seen ${esc(ago(u.lastSeen))} · ${u.entries==null?'no library yet':u.entries+' entries, '+u.franchises+' franchises, '+Math.max(1,Math.round(u.bytes/1024))+' KB'} · ${u.sessions} signed-in device${u.sessions===1?'':'s'} · ${u.versions} version${u.versions===1?'':'s'}</p>
+    <div class="chips"><button class="btn small" data-act="adm-reset" data-id="${u.id}" data-name="${esc(u.username)}">Reset password</button><button class="btn small" data-act="adm-force" data-id="${u.id}" data-name="${esc(u.username)}">Require password change</button><button class="btn small" data-act="adm-signout" data-id="${u.id}" data-name="${esc(u.username)}">Sign out everywhere</button>
+    ${u.username!==sync.user?`<button class="btn small" data-act="adm-admin" data-id="${u.id}" data-name="${esc(u.username)}" data-v="${u.isAdmin?'0':'1'}">${u.isAdmin?'Remove admin':'Make admin'}</button><button class="btn small danger" data-act="adm-delete" data-id="${u.id}" data-name="${esc(u.username)}">Delete account</button>`:''}</div>
+    <details data-group="adm${u.id}" ${opened.has('adm'+u.id)?'open':''}><summary>Features for ${esc(u.username)}</summary>
+      ${flagNames.map(f=>`<div class="facet"><span>${esc(FEATURE_LABELS[f]||f)} <span class="muted small">(${esc(f)}; default ${esc(val(d.flags.db[f])||codeLabel(f))})</span></span>${sel(val(u.overrides[f]),`data-change="adm-flag" data-u="${u.id}" data-f="${esc(f)}"`)}<span></span></div>`).join('')}</details></div>`).join('')}
+  <div class="panel"><h2>Defaults for everyone</h2><p class="muted">Used by any account without its own setting. “Default” follows the code.</p>
+    ${flagNames.map(f=>`<div class="facet"><span>${esc(FEATURE_LABELS[f]||f)} <span class="muted small">(${esc(f)}; code: ${esc(codeLabel(f))})</span></span>${sel(val(d.flags.db[f]),`data-change="adm-default" data-f="${esc(f)}"`)}<span></span></div>`).join('')}</div>`;
+}
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
 
@@ -537,7 +710,7 @@ function route(){const h=location.hash.replace(/^#\/?/,'');const [p,a]=h.split('
 let lastKey='';
 function render(){
   const r=route();
-  if(GATED_ROUTES[r.p]&&!feat(GATED_ROUTES[r.p])){location.replace('#/');return;}
+  if((GATED_ROUTES[r.p]&&!feat(GATED_ROUTES[r.p]))||(r.p==='admin'&&!sync.isAdmin)){location.replace('#/');return;}
   document.querySelectorAll('nav.main a').forEach(a=>{if(a.dataset.nav===r.p||(r.p==='entry'&&a.dataset.nav==='library')||(r.p==='franchise'&&a.dataset.nav==='franchises'))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   let html='';
   switch(r.p){
@@ -549,6 +722,7 @@ function render(){
     case 'stats':html=viewStats();break;
     case 'wrapped':html=viewWrapped(r.a);break;
     case 'settings':html=viewSettings();break;
+    case 'admin':html=viewAdmin();break;
     default:html='<div class="panel empty"><h2>Lost in the stacks</h2><p><a href="#/">Back home</a></p></div>';
   }
   $('#app').innerHTML=html;
@@ -558,7 +732,7 @@ function render(){
 
 /* ---------- views ---------- */
 function emptyState(){
-  return `<div class="panel empty"><h2>The shelves are empty</h2>
+  return `${quickBar()}<div class="panel empty"><h2>The shelves are empty</h2>
   <p>Nothing logged yet. Start with the button at the top, or fill the shelves with a few sample entries to see how everything looks (you can delete them afterwards).</p>
   <p><button class="btn primary" data-act="new">＋ Log your first thing</button> <button class="btn" data-act="samples">Add sample entries</button></p></div>`;
 }
@@ -571,6 +745,7 @@ function viewHome(){
   const planned=E.filter(e=>e.status==='planned').sort((a,b)=>b.created.localeCompare(a.created)).slice(0,6);
   const qs=(k,v,label,n)=>`<a class="stat" href="#/library" data-act="quick" data-k="${k}" data-v="${v}"><b>${n}</b>${label}</a>`;
   return `<h1>Welcome back</h1>
+  ${quickBar()}
   <div class="stats-strip">
     ${qs('','', 'in the library',E.length)}
     ${qs('status','ongoing','in progress',ongoing.length)}
@@ -801,6 +976,8 @@ function viewWrapped(arg){
 function viewSettings(){
   return `<h1>Settings &amp; files</h1>
   ${accountPanel()}
+  ${historyPanel()}${noticesPanel()}
+  ${feat('offline_app')&&installEvt?'<div class="panel"><h2>Install</h2><p>Install Marginalia as an app on this device. It opens in its own window and keeps working offline.</p><div class="chips"><button class="btn" data-act="install">Install app</button></div></div>':''}
   <div class="panel"><h2>Library files</h2><p>${esc(storageStatus)}</p>
   <p>Import all or selected records from another library. Link a JSON file to write a copy after each save.</p>
   ${canLink&&feat('file_link')&&fileHandle?`<p>Linked file: <b>${esc(fileHandle.name)}</b></p>`:''}
@@ -816,7 +993,7 @@ function viewSettings(){
       <label>Text size: ${textSize()}px<input type="range" min="12" max="26" step="1" value="${textSize()}" data-change="set" data-k="size" style="padding:0"></label>
       <label style="align-self:end"><input type="checkbox" data-change="set" data-k="spacious" ${settings.spacious?'checked':''} style="width:auto;min-height:0"> Extra-roomy spacing</label>
     </div></div>
-  <div class="panel"><h2>About</h2>${feat('shortcuts')?'<p class="muted">Shortcuts: <kbd>/</kbd> search, <kbd>n</kbd> log something, <kbd>Ctrl</kbd>+<kbd>S</kbd> save the entry being edited, <kbd>Esc</kbd> close.</p>':''}
+  <div class="panel"><h2>About</h2>${feat('shortcuts')?'<p class="muted">Shortcuts: <kbd>/</kbd> search, <kbd>n</kbd> log something,'+(feat('quick_add')?' <kbd>q</kbd> quick add,':'')+' <kbd>Ctrl</kbd>+<kbd>S</kbd> save the entry being edited, <kbd>Esc</kbd> close.</p>':''}
   <p class="muted" style="margin-bottom:0">Tip: in a note, write [[Another Entry Title]] and it becomes a link. Types, detail fields, rating scales and link relations are defined near the top of the script, so you can change them freely.</p></div>`;
 }
 
@@ -1026,7 +1203,7 @@ function updateChrome(){
   if(b){
     b.textContent=sync.token&&!/^Save failed/.test(storageStatus)?sync.user+' · '+(syncStatus||'Signed in').split(/\.\s/)[0]:storageStatus;b.title='Open account and file settings';
   }
-  document.querySelectorAll('nav.main a').forEach(a=>{const k=GATED_ROUTES[a.dataset.nav];a.hidden=!!k&&!feat(k);});
+  document.querySelectorAll('nav.main a').forEach(a=>{const k=GATED_ROUTES[a.dataset.nav];a.hidden=a.dataset.nav==='admin'?!sync.isAdmin:(!!k&&!feat(k));});
   const q=$('#q');if(q&&document.activeElement!==q&&q.value!==F.q)q.value=F.q;
 }
 
@@ -1077,6 +1254,23 @@ document.addEventListener('click',ev=>{
     case 'sync-now':syncNow();break;
     case 'signout':signOut();break;
     case 'chpass':pwOpen=!pwOpen;render();break;
+    case 'versions':loadVersions();break;
+    case 'restore':restoreVersion(el.dataset.id);break;
+    case 'clear-notices':sync.log=[];saveSync();render();break;
+    case 'install':installApp();break;
+    case 'adm-reload':adm.err='';loadAdmin();break;
+    case 'adm-invite':(async()=>{if(el.dataset.v==='close'&&!confirm('Close registration? Nobody new can sign up until you make a new invite code.'))return;
+      const r=await adminCall('POST','/api/admin/invite',{action:el.dataset.v},el.dataset.v==='close'?'Registration closed.':'New invite code created.');if(r)loadAdmin();})();break;
+    case 'adm-reset':(async()=>{if(!confirm('Reset the password for "'+el.dataset.name+'"? They are signed out everywhere and must choose a new password at next sign-in.'))return;
+      const r=await adminCall('POST','/api/admin/users/'+el.dataset.id+'/reset-password',{});if(r){adm.note='Temporary password for "'+el.dataset.name+'" (shown once): '+r.temporaryPassword;loadAdmin();}})();break;
+    case 'adm-force':(async()=>{if(!confirm('Require "'+el.dataset.name+'" to change their password at next sign-in? They are signed out everywhere.'))return;
+      const r=await adminCall('POST','/api/admin/users/'+el.dataset.id+'/force-change',{},'"'+el.dataset.name+'" must change their password at next sign-in.');if(r)loadAdmin();})();break;
+    case 'adm-signout':(async()=>{const r=await adminCall('POST','/api/admin/users/'+el.dataset.id+'/sign-out',{},'"'+el.dataset.name+'" was signed out everywhere.');if(r)loadAdmin();})();break;
+    case 'adm-admin':(async()=>{const on=el.dataset.v==='1';if(!confirm((on?'Make "':'Remove admin access from "')+el.dataset.name+'"'+(on?' an admin? Admins can reset passwords, delete accounts and change features for everyone.':'?')))return;
+      const r=await adminCall('POST','/api/admin/users/'+el.dataset.id+'/admin',{value:on},on?'"'+el.dataset.name+'" is now an admin.':'"'+el.dataset.name+'" is no longer an admin.');if(r)loadAdmin();})();break;
+    case 'adm-delete':(async()=>{const n=prompt('This deletes the account "'+el.dataset.name+'" and its library, versions and sign-ins, and cannot be undone.\n\nType the username to confirm:');
+      if(n===null)return;if(n.trim().toLowerCase()!==el.dataset.name){toast('That did not match. Nothing was deleted.');return;}
+      const r=await adminCall('DELETE','/api/admin/users/'+el.dataset.id,undefined,'Deleted "'+el.dataset.name+'".');if(r)loadAdmin();})();break;
     case 'reconnect':if(fileHandle)reconnectFile();break;
     case 'unlink':if(fileHandle&&confirm('Stop saving to the linked file? The file stays as it is.'))unlinkFile();break;
     case 'export':{if(native){native.action('export');break;}const blob=new Blob([JSON.stringify(db,null,1)],{type:'application/json'});const u=URL.createObjectURL(blob);const l=document.createElement('a');l.href=u;l.download='marginalia-backup-'+today()+'.json';l.click();setTimeout(()=>URL.revokeObjectURL(u),2000);break;}
@@ -1089,14 +1283,21 @@ document.addEventListener('change',ev=>{
   if(c==='facet'){const side=el.dataset.side,v=el.dataset.v,other=side==='include'?'exclude':'include';F[side][k]=(F[side][k]||[]).filter(x=>x!==v);if(el.checked){F[side][k].push(v);F[other][k]=(F[other][k]||[]).filter(x=>x!==v);}render();}
   else if(c==='filter'){F[k]=el.value;render();}
   else if(c==='set'){settings[k]=el.type==='checkbox'?el.checked:(k==='size'?Number(el.value):el.value);saveSettings();applyTheme();if(k==='size'||k==='spacious'){if(k==='size')render();}}
+  else if(c==='adm-flag'||c==='adm-default'){
+    const enabled=el.value===''?null:el.value==='on';
+    (async()=>{const r=c==='adm-flag'?await adminCall('PUT','/api/admin/users/'+el.dataset.u+'/features',{flag:el.dataset.f,enabled}):await adminCall('PUT','/api/admin/features/default',{flag:el.dataset.f,enabled});
+      if(r){adm.note='Saved. Accounts pick this up at their next sync (about a minute).';if(sync.token)syncNow();loadAdmin();}})();}
   else if(c==='fr-notes'){const f=frById(el.dataset.f);if(f){f.notes=el.value;f.updated=now();changed();}}
   else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
 });
 document.addEventListener('submit',ev=>{if(ev.target.id==='editor'){ev.preventDefault();saveEditor();}else if(ev.target.id==='authform'){ev.preventDefault();submitAuth(ev.target);}else if(ev.target.id==='pwform'){ev.preventDefault();changePassword(ev.target);}});
+document.addEventListener('input',ev=>{if(ev.target.id==='quick'){const p=$('#quickprev');if(p)p.textContent=quickSummary(parseQuick(ev.target.value));}});
 document.addEventListener('keydown',ev=>{
+  if(ev.target.id==='quick'&&ev.key==='Enter'){ev.preventDefault();addQuick();return;}
   const mod=ev.ctrlKey||ev.metaKey,t=ev.target,typing=!!(t.closest&&t.closest('input,textarea,select,[contenteditable]'));
   if(ev.key==='Escape'){
     if(pending)dismissImport();else if(ed)closeEditor();
+    else if(t.id==='quick'){t.blur();}
     else if(t.id==='q'){if(t.value){t.value='';F.q='';render();}t.blur();}
     return;
   }
@@ -1106,6 +1307,7 @@ document.addEventListener('keydown',ev=>{
   if(mod||ev.altKey||typing||!$('#overlay').hidden)return;
   if(ev.key==='/'){ev.preventDefault();const q=$('#q');q.focus();q.select();}
   else if(ev.key==='n'||ev.key==='N'){ev.preventDefault();openEditor();}
+  else if((ev.key==='q'||ev.key==='Q')&&feat('quick_add')){ev.preventDefault();if(route().p!=='home')location.hash='#/';setTimeout(()=>{const q=$('#quick');if(q)q.focus();},60);}
 });
 addEventListener('dragover',ev=>{if(feat('drag_drop_import')&&ev.dataTransfer&&[...ev.dataTransfer.types].includes('Files'))ev.preventDefault();});
 addEventListener('drop',ev=>{
@@ -1152,7 +1354,7 @@ window.addEventListener('resize',()=>requestAnimationFrame(()=>{
 }));
 window.marginaliaBack=()=>{if(pending){dismissImport();return true;}if(ed){closeEditor();return true;}if(route().p!=='home'){location.hash='#/';return true;}return false;};
 document.addEventListener('toggle',ev=>{const k=ev.target.dataset?.group;if(k){if(ev.target.open)opened.add(k);else opened.delete(k);}},true);
-applyTheme();render();restoreLink();if(sync.token)syncNow();
+applyTheme();render();restoreLink();setupPWA();if(sync.token)syncNow();
 const savedDraft=loadJSON('marginalia.draft');
 if(savedDraft){ed=savedDraft.data;edInitial=savedDraft.initial;$('#overlay').hidden=false;paintEditor();}
 else if(native&&!native.linked()&&!localStorage.getItem('welcomed')){localStorage.setItem('welcomed','1');location.hash='#/settings';}

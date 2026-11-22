@@ -3,4 +3,6 @@
 !server/package-lock.json
 !server/index.js
 !server/features.js
+!web
+!web/**
 !app/src/main/assets/index.html

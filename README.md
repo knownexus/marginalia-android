@@ -28,7 +28,7 @@ To reset a password, run `npm ci` in `server/`, then `DATABASE_URL=<database URL
 
 Features can be switched on or off per account, so new functionality can reach chosen users first. A flag resolves in this order: the account's own setting, then the database default, then the default in the code. Everything that exists today defaults to on, so an account with no setting keeps it all. Signed-out use always follows the defaults in the page.
 
-Current flags: `franchises`, `stats`, `wrapped`, `file_link`, `shortcuts`, `drag_drop_import`. Manage them with `server/flags.js` (same `DATABASE_URL` as the password script):
+Current flags: `franchises`, `stats`, `wrapped`, `file_link`, `shortcuts`, `drag_drop_import` (all on by default) and `version_history`, `offline_app`, `quick_add`, `sync_notices` (off by default, so they reach only the accounts you switch them on for). Manage them with `server/flags.js` (same `DATABASE_URL` as the password script):
 
 ```
 node flags.js list                       # every flag, its defaults and per-user settings
@@ -40,6 +40,14 @@ node flags.js default on new_editor      # roll out to everyone without a settin
 ```
 
 To ship something new to chosen users: add the flag in `index.html` (`FEATURES`, as `false`), wrap the feature in `feat('new_editor')`, deploy, then `node flags.js on new_editor <user>`. Accounts pick up changes at their next sync, within about a minute or when they reopen the app. Flags hide features in the page. They don't enforce anything on the server, which can check a flag with `featureOn()` in `server/features.js` when needed. By hand in SQL: `INSERT INTO user_features(user_id,flag,enabled) SELECT id,'new_editor',true FROM users WHERE username='alice' ON CONFLICT (user_id,flag) DO UPDATE SET enabled=true;`
+
+### Admin, history, offline app, quick add and sync notices
+
+- **Admin page** (`#/admin`, only for accounts marked admin; enforced on the server). Create the first admin by setting the `ADMIN_USERS` variable on the server to a username (comma-separate several), or with `node admin.js grant <user>`. Admins can reset a password (a temporary one is shown once and the user must change it at next sign-in), require a password change, sign someone out everywhere, make or remove admins, delete an account, turn feature flags on or off per account or for everyone, and rotate or close the invite code. Admins see counts and sizes, never anyone's entries.
+- **Version history** (flag `version_history`). The server keeps up to 40 snapshots per account: at most one every 15 minutes while you edit, always before a change that removes entries, and always before a restore. **Settings → Version history → Restore** brings an earlier snapshot back on every signed-in device (restored records get fresh timestamps so the merge accepts them), and today's library stays as a version, so a restore can be undone.
+- **Installable offline app** (flag `offline_app`). Adds a web manifest and a service worker so Chrome, Edge and phones can install the site and open it offline. The page comes from the network when it can and from the cache when it can't. Sync calls are never cached. Turning the flag off removes both.
+- **Quick add** (flag `quick_add`). One line on Home, for example `Dune by Frank Herbert, book, finished, 4 stars, #scifi, in Dune saga, 2026-03-12`. Details after the title are matched by what they look like: a type (book, film, tv, game, play, escape, online), a status (planned, reading, finished…), a rating (`4 stars`, `4.5/5`, `4*`), `#genres`, `in Franchise`, `by Creator`, and `today`, `yesterday` or a date. Anything else becomes a note. `q` jumps to it.
+- **Sync notices** (flag `sync_notices`). When a sync brings in changes it says what changed, and when the same record was edited on two devices it says which version won (the newer edit). **Settings → Recent sync activity** keeps the last 25.
 
 ### Use it on desktop
 

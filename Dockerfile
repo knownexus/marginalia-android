@@ -5,6 +5,7 @@ COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 COPY server/index.js server/features.js ./
 COPY app/src/main/assets/index.html ./index.html
+COPY web ./web
 ENV NODE_ENV=production
 USER node
 CMD ["node", "index.js"]
