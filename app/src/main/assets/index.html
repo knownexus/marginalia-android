@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-U9vEczXo1e/bCZJGxWls+l6oIYRYf9+GeJG+tIkz7Uw='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uFQwXGLsnluK56rZfe5s77j0Ioa6m+A0Rm1e9KSwrW8='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -222,7 +222,9 @@ const TYPES={
     {k:'pages',label:'Pages',kind:'number'},
     {k:'currentPage',label:'Current page',kind:'number'},
     {k:'format',label:'Format',kind:'select',options:['Paper','E-book','Audiobook','Comic / manga']},
-    {k:'series',label:'Series / volume',kind:'text'}]},
+    {k:'series',label:'Series / volume',kind:'text'},
+    {k:'narrator',label:'Narrator',kind:'text',flag:'import_trackers'},
+    {k:'audioHours',label:'Audiobook length (hours)',kind:'number',flag:'import_trackers'}]},
   tv:{label:'TV show',icon:'📺',creator:'Creator',fields:[
     {k:'seasons',label:'Seasons watched',kind:'text'},
     {k:'episodes',label:'Episode progress',kind:'text'},
@@ -252,6 +254,8 @@ const TYPES={
     {k:'hints',label:'Hints used',kind:'number'}]}
 };
 const TYPE_KEYS=Object.keys(TYPES);
+// Fields with a flag are shown only when it is on. They are always kept when saving, so data is never lost.
+const fieldsOf=T=>T.fields.filter(f=>!f.flag||feat(f.flag));
 const STATUSES=[['planned','Planned'],['ongoing','In progress'],['finished','Finished'],['paused','On hold'],['dropped','Dropped']];
 const statusLabel=k=>(STATUSES.find(s=>s[0]===k)||[k,k])[1];
 const FEELINGS=[
@@ -825,12 +829,73 @@ const cleanText=s=>String(s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g
 function hash32(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
 const pick_=(r,...names)=>{for(const n of names){const k=Object.keys(r).find(x=>x.toLowerCase()===n);if(k&&r[k]!=='')return r[k];}return '';};
 function importEntry(o){
-  return {id:o.id,type:o.type,title:o.title,creator:o.creator||'',franchiseId:'',genres:[...new Set((o.genres||[]).map(g=>g.trim().toLowerCase()).filter(Boolean))],status:o.status||'finished',stars:o.stars==null?null:o.stars,feeling:'',food:'',
-    dates:o.dates||[],details:o.details||{},notes:o.notes||'',links:[],cover:'',url:'',listIds:[],created:now(),updated:IMPORT_STAMP};
+  return {id:o.id,type:o.type,title:o.title,creator:o.creator||'',franchiseId:o.franchiseId||'',genres:[...new Set((o.genres||[]).map(g=>g.trim().toLowerCase()).filter(Boolean))],status:o.status||'finished',stars:o.stars==null?null:o.stars,feeling:'',food:'',
+    dates:o.dates||[],details:o.details||{},notes:o.notes||'',links:[],cover:'',url:o.url||'',listIds:[],created:o.created||now(),updated:IMPORT_STAMP};
+}
+/* Audible, through a Libation (or OpenAudible-style) export, as JSON or CSV. */
+const AUD_DOMAIN={uk:'co.uk',us:'com',ca:'ca',au:'com.au',de:'de',fr:'fr',in:'in',it:'it',jp:'co.jp',es:'es',br:'com.br'};
+const normKey=k=>String(k).toLowerCase().replace(/[^a-z0-9]/g,'');
+const isAudibleRows=rows=>{const k=new Set(Object.keys(rows[0]||{}).map(normKey));return k.has('audibleproductid')||(k.has('asin')&&(k.has('narrators')||k.has('narratornames')));};
+const AUTHOR_ROLES_DROPPED=/^(translator|foreword|introduction|afterword|illustrator|editor|contributor|cover design)/i;
+function cleanAuthors(s){
+  return String(s||'').split(/,\s+/).map(p=>{const m=/^(.*?)\s+-\s+(.+)$/.exec(p);return m?(AUTHOR_ROLES_DROPPED.test(m[2])?'':m[1]):p;}).filter(Boolean).join(', ');
+}
+const reEsc=t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+function audibleSeries(names,orders){
+  return String(names||'').split(/,\s+/).map(t=>t.trim()).filter(Boolean).map(name=>{
+    const m=new RegExp('(?:^|,\\s*)(\\d+(?:\\.\\d+)?)?\\s*:\\s*'+reEsc(name)+'(?=,|$)').exec(String(orders||''));
+    return {name,order:m&&m[1]?m[1]:''};
+  });
+}
+function importAudible(rows){
+  const yes=v=>/^(true|yes|1)$/i.test(String(v)),out={entries:[],franchises:[],skipped:[]};
+  const get=(r,...names)=>{for(const k in r){if(names.includes(normKey(k))&&r[k]!==''&&r[k]!=null)return r[k];}return '';};
+  const kept=[];let episodes=0,returned=0;
+  for(const r of rows){
+    const title=String(get(r,'title')).trim(),ctype=String(get(r,'contenttype')).toLowerCase(),finished=yes(get(r,'isfinished','finished'));
+    if(!title)continue;
+    if(ctype&&ctype!=='product'){episodes++;continue;}
+    if(yes(get(r,'absentfromlastscan'))&&!finished){returned++;continue;}
+    kept.push({r,title,finished,series:audibleSeries(get(r,'seriesnames','series'),get(r,'seriesorder'))});
+  }
+  const count=new Map();kept.forEach(k=>k.series.forEach(s=>count.set(s.name,(count.get(s.name)||0)+1)));
+  // Pass 1: each book's most specific series (numbered ones first, then the one with the fewest books).
+  for(const k of kept){const pool=k.series.some(s=>s.order)?k.series.filter(s=>s.order):k.series;k.primary=pool.slice().sort((a,b)=>count.get(a.name)-count.get(b.name))[0];}
+  const owned=new Map();kept.forEach(k=>{if(k.primary)owned.set(k.primary.name,(owned.get(k.primary.name)||0)+1);});
+  // Pass 2: a franchise needs at least two books. A stranded book moves to another of its series that has enough, or stays series-text only.
+  for(const k of kept){
+    k.fr='';
+    if(k.primary&&owned.get(k.primary.name)>=2)k.fr=k.primary.name;
+    else{const alt=k.series.filter(s=>(owned.get(s.name)||0)>=2).sort((a,b)=>owned.get(a.name)-owned.get(b.name))[0];if(alt)k.fr=alt.name;}
+  }
+  const frs=new Map();
+  for(const {r,title,finished,series,primary,fr} of kept){
+    const pid=String(get(r,'audibleproductid','productid','asin')).replace(/[^A-Za-z0-9_-]/g,''),asin=pid||hash32(title);
+    let franchiseId='';
+    if(fr){
+      const fid='aud-fr-'+hash32(fr.toLowerCase());
+      if(!frs.has(fid))frs.set(fid,{id:fid,name:fr,notes:'',timelines:[],created:now(),updated:IMPORT_STAMP});
+      franchiseId=fid;
+    }
+    const minutes=Number(get(r,'lengthinminutes','length','lengthmin')),added=new Date(get(r,'dateadded')),narrator=String(get(r,'narratornames','narrators','narrator')).trim();
+    const details={format:'Audiobook'};
+    if(narrator)details.narrator=narrator;
+    if(minutes>0)details.audioHours=Math.round(minutes/6)/10;
+    if(primary)details.series=primary.name+(primary.order?' #'+primary.order:'');
+    const locale=String(get(r,'locale')).toLowerCase();
+    out.entries.push(importEntry({id:'aud-'+asin,type:'book',title,creator:cleanAuthors(get(r,'authornames','authors','author')),status:finished?'finished':'planned',stars:halfStar(get(r,'myratingoverall','myrating','rating')),
+      genres:String(get(r,'categoriesnames','categories')).split(/;/).concat(yes(get(r,'isabridged','abridged'))?['abridged']:[]),details,franchiseId,
+      created:Number.isFinite(added.getTime())?added.toISOString():undefined,url:pid?'https://www.audible.'+(AUD_DOMAIN[locale]||'com')+'/pd/'+pid:''}));
+  }
+  out.franchises=[...frs.values()];
+  if(episodes)out.skipped.push(episodes+' sleep and podcast episode'+(episodes===1?'':'s'));
+  if(returned)out.skipped.push(returned+' returned unfinished book'+(returned===1?'':'s'));
+  return out;
 }
 function importRows(rows,fileName){
   const H=new Set(Object.keys(rows[0]||{}).map(h=>h.toLowerCase())),out=[];
   if(!rows.length)return {kind:'empty',entries:[]};
+  if(isAudibleRows(rows)){const a=importAudible(rows);return {kind:'Audible',entries:a.entries,franchises:a.franchises,skipped:a.skipped};}
   if(H.has('exclusive shelf')){
     for(const r of rows){const title=r['Title'];if(!title)continue;
       const shelf=(r['Exclusive Shelf']||'').toLowerCase(),status={read:'finished','currently-reading':'ongoing','to-read':'planned'}[shelf]||'finished',end=isoDate(r['Date Read']),pages=Number(r['Number of Pages']);
@@ -873,30 +938,40 @@ function importRows(rows,fileName){
   }
   return {kind:'unknown',entries:[]};
 }
+function jsonRows(text){
+  let j;try{j=JSON.parse(text);}catch(e){throw Error('Could not read that JSON file');}
+  if(!Array.isArray(j)||!j.every(x=>x&&typeof x==='object'&&!Array.isArray(x)))throw Error('That JSON file is not a list of records');
+  return j.map(o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,v==null?'':typeof v==='object'?JSON.stringify(v):String(v)])));
+}
 function buildImport(files){
-  const byId=new Map(),kinds=new Set();
+  const byId=new Map(),kinds=new Set(),franchises=new Map(),skipped=[];
   for(const f of files){
-    const r=importRows(parseCSV(f.text),f.name);
+    const r=importRows(/\.json$/i.test(f.name)?jsonRows(f.text):parseCSV(f.text),f.name);
     if(r.entries.length)kinds.add(r.kind);
+    (r.franchises||[]).forEach(x=>franchises.set(x.id,x));(r.skipped||[]).forEach(x=>skipped.push(x));
     for(const e of r.entries){const ex=byId.get(e.id);if(!ex)byId.set(e.id,e);else{if(ex.stars==null)ex.stars=e.stars;for(const d of e.dates)if(!ex.dates.some(x=>x.end===d.end&&x.start===d.start))ex.dates.push(d);if(e.status==='finished')ex.status='finished';}}
   }
-  return {lib:{version:1,entries:[...byId.values()],franchises:[],lists:[],deleted:{}},kinds:[...kinds]};
+  return {lib:{version:1,entries:[...byId.values()],franchises:[...franchises.values()],lists:[],deleted:{}},kinds:[...kinds],skipped};
 }
 document.addEventListener('change',async ev=>{
   if(ev.target.id!=='trackerfile')return;
   const files=[...ev.target.files];ev.target.value='';if(!files.length)return;
   try{
-    const r=buildImport(await Promise.all(files.map(async f=>({name:f.name,text:await f.text()}))));
-    if(!r.lib.entries.length)throw Error('No entries found. Expected a Goodreads, StoryGraph or Letterboxd export, or a CSV with a Title column.');
-    toast('Read '+r.lib.entries.length+' entries from '+r.kinds.join(' and ')+'. Review them before they are added.');
+    const read=await Promise.all(files.map(async f=>({name:f.name,text:await f.text()})));
+    if(read.length===1&&/\.json$/i.test(read[0].name)){   // a Marginalia backup goes straight to the review screen
+      try{const j=JSON.parse(read[0].text);if(j&&!Array.isArray(j)&&Array.isArray(j.entries)){preview(read[0].text);return;}}catch(e){}
+    }
+    const r=buildImport(read);
+    if(!r.lib.entries.length)throw Error('No entries found. Expected a Goodreads, StoryGraph, Letterboxd or Audible (Libation) export, or a CSV with a Title column.');
+    toast('Read '+r.lib.entries.length+' entries from '+r.kinds.join(' and ')+(r.skipped.length?'. Skipped '+r.skipped.join(' and '):'')+'. Review them before they are added.');
     preview(JSON.stringify(r.lib));
   }catch(e){toast('Import failed: '+e.message);}
 });
 function importPanel(){
   if(!feat('import_trackers'))return '';
-  return `<div class="panel"><h2>Import from another tracker</h2><p>Bring in a Goodreads, StoryGraph or Letterboxd export (CSV), or any CSV with a Title column. You review everything before it is added, and importing the same file twice never duplicates entries. Anything you have already edited wins.</p>
-  <label>Choose file(s)<input type="file" id="trackerfile" accept=".csv,text/csv" multiple></label>
-  <p class="muted small">Goodreads: My Books → Import and export → Export library. Letterboxd: Settings → Data → Export, then pick <code>ratings.csv</code>, <code>diary.csv</code>, <code>watched.csv</code> and <code>watchlist.csv</code> together. For a plain CSV the columns title, type, creator, status, rating, finished, genres and notes are understood.</p></div>`;
+  return `<div class="panel"><h2>Import from another tracker</h2><p>Bring in a Goodreads, StoryGraph, Letterboxd or Audible export, or any CSV with a Title column. You review everything before it is added, and importing the same file twice never duplicates entries. Anything you have already edited wins.</p>
+  <label>Choose file(s)<input type="file" id="trackerfile" accept=".csv,.json,text/csv,application/json" multiple></label>
+  <p class="muted small">Audible: export your library with Libation (JSON or CSV) and choose that file. Sleep and podcast episodes and returned, unfinished books are skipped. Goodreads: My Books → Import and export → Export library. Letterboxd: Settings → Data → Export, then pick <code>ratings.csv</code>, <code>diary.csv</code>, <code>watched.csv</code> and <code>watchlist.csv</code> together. For a plain CSV the columns title, type, creator, status, rating, finished, genres and notes are understood.</p></div>`;
 }
 
 /* ---------- share links (flag: sharing; the server enforces it) ---------- */
@@ -1143,7 +1218,7 @@ function viewEntry(id){
   const e=byId(id);
   if(!e)return '<div class="panel empty"><h2>Entry not found</h2><p>It may have been deleted on another device. <a href="#/library">Back to the library</a></p></div>';
   const T=TYPES[e.type],fr=e.franchiseId&&frById(e.franchiseId);
-  const fieldRows=T.fields.filter(f=>e.details[f.k]!==undefined&&e.details[f.k]!=='').map(f=>`<dt>${esc(f.label)}</dt><dd>${esc(e.details[f.k])}</dd>`).join('');
+  const fieldRows=fieldsOf(T).filter(f=>e.details[f.k]!==undefined&&e.details[f.k]!=='').map(f=>`<dt>${esc(f.label)}</dt><dd>${esc(e.details[f.k])}</dd>`).join('');
   const out=e.links.filter(l=>byId(l.to)).map(l=>{const t=byId(l.to);return `<li>${esc(REL[l.rel]?REL[l.rel].out:'is related to')} <a href="#/entry/${t.id}">${TYPES[t.type].icon} ${esc(t.title)}</a></li>`;});
   const inc=[];db.entries.forEach(x=>x.links.forEach(l=>{if(l.to===e.id)inc.push(`<li><a href="#/entry/${x.id}">${TYPES[x.type].icon} ${esc(x.title)}</a> ${esc(REL[l.rel]?REL[l.rel].out:'is related to')} this</li>`);}));
   const mention=db.entries.filter(x=>x.id!==e.id&&x.notes&&x.notes.toLowerCase().includes('[['+e.title.toLowerCase()+']]'));
@@ -1389,7 +1464,7 @@ function editorHTML(){
       <p style="margin-bottom:0"><button type="button" class="btn small" data-act="ed-addrun">＋ Add a date / run</button></p>
     </fieldset>
 
-    <fieldset><legend>${T.icon} ${esc(T.label)} details</legend><div class="row2" style="margin-bottom:0">${T.fields.map(fld).join('')}</div></fieldset>
+    <fieldset><legend>${T.icon} ${esc(T.label)} details</legend><div class="row2" style="margin-bottom:0">${fieldsOf(T).map(fld).join('')}</div></fieldset>
 
     ${coverFields()}
     <label>Notes <span class="muted small">(write [[Another Title]] to link to another entry)</span><textarea name="notes">${esc(d.notes)}</textarea></label>
@@ -1409,7 +1484,7 @@ function syncDraft(){
   if(f.elements.url)ed.url=g('url').trim();
   ed.dates=ed.dates.map((r,i)=>({start:g('rs'+i),end:g('re'+i),note:g('rn'+i)}));
   ed.links=ed.links.map((l,i)=>({rel:g('lr'+i),to:g('lt'+i)}));
-  for(const fl of TYPES[ed.type].fields){
+  for(const fl of fieldsOf(TYPES[ed.type])){
     const v=g('d_'+fl.k);
     if(v==='')delete ed.details[fl.k];else ed.details[fl.k]=fl.kind==='number'?Number(v):v;
   }
