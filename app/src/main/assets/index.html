@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-5oBW4Uz4Ra4x/H3G/C5v1IJD7LE/iYGyv+Q+MVKwtZM='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-pdJMUgUlmqzG5UvV+icy+Fo/phGdHb9qLwyj6UgI7bA='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -1032,6 +1032,11 @@ async function bulkAo3(){   // fills in the selected stories that have an AO3 li
   const msg='Filled in '+plural(ok,'story')+(all.length>LIMIT?' (first '+LIMIT+' of '+all.length+'; run it again for the rest)':'')+(skippedTags?'. '+plural(skippedTags,'new tag')+' left out. Fetch a story from the editor to review new tags':'')+(err?'. Stopped: '+err:'');
   if(ok)offerUndo(msg,snap);else toast(msg||err);
 }
+function toFanfic(e,t){   // a book that is really fanfiction becomes the Fanfiction type; everything else on it is kept
+  e.type='fanfic';const d=e.details||(e.details={});delete d.format;delete d.pages;delete d.currentPage;
+  if(!d.site)d.site=/archiveofourown|ao3/i.test(e.url||'')?'AO3':/fanfiction\.net/i.test(e.url||'')?'fanfiction.net':'Other';
+  e.updated=t||now();return e;
+}
 const isFicBook=e=>e.type==='book'&&((e.details||{}).format==='Fanfic'||/archiveofourown\.(org|com|net|gay)\/works\/|fanfiction\.net\/s\//i.test(e.url||''));
 function fanficMovePanel(){
   const n=db.entries.filter(isFicBook).length;if(!n)return '';
@@ -1041,7 +1046,7 @@ document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-fanfic]');if(!b)return;
   const es=db.entries.filter(isFicBook);if(!es.length)return;
   const snap=undoSnap(),t=now();
-  for(const e of es){e.type='fanfic';const d=e.details||(e.details={});delete d.format;delete d.pages;delete d.currentPage;if(!d.site)d.site=/archiveofourown|ao3/i.test(e.url||'')?'AO3':/fanfiction\.net/i.test(e.url||'')?'fanfiction.net':'Other';e.updated=t;}
+  for(const e of es)toFanfic(e,t);
   changed();offerUndo('Moved '+plural(es.length,'book')+' to Fanfiction',snap);
 });
 const ao3EditorBox=()=>ao3On()?`<fieldset><legend>Fetch from AO3</legend><div class="row2" style="margin-bottom:0"><label>AO3 link<input id="ao3link" type="text" inputmode="url" autocapitalize="none" spellcheck="false" value="${esc(ao3IdOf(ed.url)?ed.url:'')}" placeholder="https://archiveofourown.org/works/…"></label><div style="align-self:end"><button type="button" class="btn" data-ao3="editor-fetch">Fetch details</button></div></div><p class="muted small" style="margin:.3rem 0 0">Fills in the title, author, word count, rating, fandom, tags and summary. You choose which tags to keep before anything changes.</p></fieldset>`:'';
@@ -2747,10 +2752,13 @@ function preview(text){
       const views=source.views.filter(v=>selected.has(v.id));
       const deleted=Object.fromEntries(Object.entries(source.deleted).filter(([k])=>selected.has('del:'+k)));
       result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,lists,views,dismissed:source.dismissed,tagRules:source.tagRules,deleted})));
+      // a re-import keeps what you already have, but a story you hold as a book that the file says is fanfiction is retyped
+      const incoming=new Map(entries.map(e=>[e.id,e]));let retyped=0;
+      for(const e of result.entries){const inc=incoming.get(e.id);if(inc&&inc.type==='fanfic'&&e.type==='book'){toFanfic(e);retyped++;}}
       const before=new Map([...db.entries,...db.franchises,...db.lists,...db.views].map(r=>[r.id,canon(r)]));
       const after=[...result.entries,...result.franchises,...result.lists,...result.views];const added=after.filter(r=>!before.has(r.id)).length;
       const unchanged=after.filter(r=>before.get(r.id)===canon(r)).length;
-      $('#counts').textContent=added+' added · '+(after.length-added-unchanged)+' updated · '+unchanged+' retained · '+(before.size+added-after.length)+' removed. Required franchises are included.';
+      $('#counts').textContent=added+' added · '+(after.length-added-unchanged)+' updated · '+unchanged+' retained · '+(before.size+added-after.length)+' removed. Required franchises are included.'+(retyped?' '+plural(retyped,'existing book')+' will become Fanfiction.':'');
       $('#applyImport').disabled=!selected.size;
     }
     $('#picks').onchange=calculate;
