@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-zceZ2ppvw4A6fXcYxhDSSXIztfScjb9ecFFSIl1pW7g='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-UO8X7Ulv+4lvQIelwG27ue5oIjYdFTAjUnECNaAkFX0='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -391,7 +391,24 @@ let settings=Object.assign({theme:'auto',font:'system',size:null,spacious:false,
 if(settings.size===18&&desktop)settings.size=null;
 const textSize=()=>settings.size||defaultSize;
 const defaults=()=>({q:'',sort:'recent',mode:'all',min:'',max:'',from:'',to:'',include:{},exclude:{}});
-let F=defaults(), ed=null,edInitial='',pending=null;
+/* The Library filter survives a refresh (and closing the app): it is kept on this device, per account. */
+const LS_FILTER='marginalia.filter.v1';
+const filterKey=()=>LS_FILTER+(profiles.current?'.'+profiles.current:'');
+let restoredView=null,savedFilterJSON='';
+function loadFilter(){
+  restoredView=null;
+  try{
+    const j=JSON.parse(localStorage.getItem(filterKey())||'null');if(!j||typeof j!=='object'||!j.F||typeof j.F!=='object')return defaults();
+    const o=defaults(),f=j.F;
+    for(const k of ['q','sort','mode','min','max','from','to'])if(typeof f[k]==='string')o[k]=f[k];
+    for(const side of ['include','exclude'])if(f[side]&&typeof f[side]==='object')for(const [k,v] of Object.entries(f[side]))if(/^[a-z]+$/.test(k)&&Array.isArray(v)&&v.every(x=>typeof x==='string'))o[side][k]=v;
+    restoredView=typeof j.view==='string'&&db.views.some(v=>v.id===j.view)?j.view:null;
+    savedFilterJSON=localStorage.getItem(filterKey());
+    return o;
+  }catch(e){return defaults();}
+}
+let F=loadFilter(), ed=null,edInitial='',pending=null;
+const facetQ={};   // text typed into a long facet's search box
 const opened=new Set();
 function loadJSON(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
 function normalize(d){
@@ -608,6 +625,7 @@ function switchProfile(slot){
   profiles.current=slot;sync=profiles.list[slot];saveSync();
   try{db=normalize(loadJSON(dataKey(slot))||{});}catch(e){db=normalize({});}
   resetTransient();
+  F=loadFilter();lastView=restoredView;
   fileHandle=null;fileState='';queued=null;busy=false;storageStatus=LOCAL_STATUS;
   setupPWA();restoreLink();
   if(/^#\/(admin|entry|list|franchise|shared)(\/|$)/.test(location.hash))location.hash='#/';   // those pages belong to the account we left
@@ -1955,7 +1973,7 @@ function viewTidy(){
 }
 
 /* ---------- saved views (flag: saved_views) ---------- */
-let lastView=null;
+let lastView=restoredView;
 const filterOfView=v=>Object.assign(defaults(),JSON.parse(JSON.stringify(v.filter||{})));
 const stripEmpty=o=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>!(Array.isArray(v)&&!v.length)));
 const normF=f=>canon(Object.assign({},f,{include:stripEmpty(f.include),exclude:stripEmpty(f.exclude)}));
@@ -2249,7 +2267,15 @@ const topN=(m,n)=>[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,n);
 /* ---------- routing ---------- */
 function route(){const h=location.hash.replace(/^#\/?/,'');const [p,a]=h.split('/');return {p:p||'home',a:a?decodeURIComponent(a):''};}
 let lastKey='';
+function saveFilter(){
+  try{
+    const plain=JSON.stringify(F)===JSON.stringify(defaults())&&!lastView,json=plain?'':JSON.stringify({F,view:lastView});
+    if(json===savedFilterJSON)return;
+    savedFilterJSON=json;if(json)localStorage.setItem(filterKey(),json);else localStorage.removeItem(filterKey());
+  }catch(e){}
+}
 function render(){
+  saveFilter();
   const r=route();
   if((GATED_ROUTES[r.p]&&!feat(GATED_ROUTES[r.p]))||(r.p==='admin'&&!sync.isAdmin)||(r.p==='tidy'&&!tidyOn())){location.replace('#/');return;}
   document.querySelectorAll('nav.main a').forEach(a=>{if(a.dataset.nav===r.p||(r.p==='entry'&&a.dataset.nav==='library')||(r.p==='franchise'&&a.dataset.nav==='franchises')||(r.p==='list'&&a.dataset.nav==='lists'))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
@@ -2350,16 +2376,26 @@ function viewLibrary(){
   if(feat('lists')&&db.lists.length)facets.list=['List',[...db.lists].sort(byName).map(l=>[l.id,l.name])];
   const chips=[];
   const groups=Object.entries(facets).map(([k,[label,opts]])=>{
-    const rows=opts.map(([v,name])=>{
+    // a long list of genres or tags shows the most used ones, anything you have ticked, and whatever the search box matches
+    const big=(k==='tag'||k==='genre')&&opts.length>60,cnt=new Map();
+    let shown=opts,note='';
+    if(big){
+      db.entries.forEach(e=>(k==='tag'?(e.tags||[]):e.genres).forEach(x=>cnt.set(x,(cnt.get(x)||0)+1)));
+      const q=String(facetQ[k]||'').trim().toLowerCase(),sel=new Set([...(F.include[k]||[]),...(F.exclude[k]||[])]);
+      const pool=[...opts].sort((a,b)=>(cnt.get(b[0])||0)-(cnt.get(a[0])||0)||a[1].localeCompare(b[1])).filter(([v,n])=>!q||n.toLowerCase().includes(q)||sel.has(v));
+      shown=pool.filter(([v])=>sel.has(v)).concat(pool.filter(([v])=>!sel.has(v)).slice(0,q?100:40));
+      note='<label class="small">Search '+label.toLowerCase()+'s ('+shown.length+' of '+opts.length+' shown)<input type="search" data-facetq="'+k+'" value="'+esc(facetQ[k]||'')+'" placeholder="Type to find one…"></label>';
+    }
+    const rows=shown.map(([v,name])=>{
       const controls=['include','exclude'].map(side=>{
         const checked=(F[side][k]||[]).includes(v);
         const attrs='data-side="'+side+'" data-k="'+k+'" data-v="'+esc(v)+'"';
         if(checked)chips.push('<button class="chip" data-act="untag" '+attrs+'>'+side+' '+esc(name)+' ×</button>');
         return '<label><input type="checkbox" data-change="facet" '+attrs+(checked?' checked':'')+'>'+side+'</label>';
       }).join(' ');
-      return '<div class="facet"><span>'+esc(name)+'</span>'+controls+'</div>';
+      return '<div class="facet"><span>'+esc(name)+(big?' <span class="muted small">('+(cnt.get(v)||0)+')</span>':'')+'</span>'+controls+'</div>';
     }).join('');
-    return '<details data-group="'+k+'" '+(opened.has(k)?'open':'')+'><summary>'+label+'</summary>'+ (rows||'No values yet')+'</details>';
+    return '<details data-group="'+k+'" '+(opened.has(k)?'open':'')+'><summary>'+label+'</summary>'+note+(rows||'No values yet')+'</details>';
   }).join('');
   const range=(k,l,type)=>'<label>'+l+'<input type="number" '+(type==='stars'?'min="0" max="5" step=".5"':'min="1" max="9999"')+' data-change="filter" data-k="'+k+'" value="'+esc(F[k])+'"></label>';
   for(const [key,label] of Object.entries({q:'Search',min:'Minimum stars',max:'Maximum stars',from:'From year',to:'To year'}))if(F[key]!=='')chips.push('<button class="chip" data-act="unrange" data-k="'+key+'">'+label+' '+esc(F[key])+' ×</button>');
@@ -3022,6 +3058,12 @@ document.addEventListener('change',ev=>{
   else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
 });
 document.addEventListener('submit',ev=>{if(ev.target.id==='editor'){ev.preventDefault();saveEditor();}else if(ev.target.id==='authform'){ev.preventDefault();submitAuth(ev.target);}else if(ev.target.id==='pwform'){ev.preventDefault();changePassword(ev.target);}});
+let facetQTimer=0;
+document.addEventListener('input',ev=>{
+  const el=ev.target&&ev.target.dataset&&ev.target.dataset.facetq;if(!el)return;
+  facetQ[el]=ev.target.value;clearTimeout(facetQTimer);
+  facetQTimer=setTimeout(()=>{opened.add(el);render();const n=document.querySelector('[data-facetq="'+el+'"]');if(n){n.focus();const l=n.value.length;try{n.setSelectionRange(l,l);}catch(x){}}},250);
+});
 document.addEventListener('input',ev=>{if(ev.target.id==='gq'){gq=ev.target.value;const l=$('#glist');if(l)l.innerHTML=glistHTML();}if(ev.target.id==='quick'){const p=$('#quickprev');if(p)p.textContent=quickSummary(parseQuick(ev.target.value));}});
 document.addEventListener('keydown',ev=>{
   if(ev.target.id==='quick'&&ev.key==='Enter'){ev.preventDefault();addQuick();return;}
