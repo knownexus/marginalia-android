@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HOpzgAewdreYrh26qTyvS2y0vNhSuSsdRIpsYYUMs48='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-GWsL3mFy/qbNXv4VopBQu0tKj6OJHKQgZVAgtJTZF7s='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -101,6 +101,7 @@ button.chip{cursor:pointer;min-height:2.2rem}
 .stat{background:var(--panel);border:3px double var(--border);border-radius:var(--radius);padding:.7rem;text-align:center;cursor:pointer;color:var(--text);text-decoration:none;display:block}
 .stat b{display:block;font-size:2rem;color:var(--accent);line-height:1.2}
 .empty{text-align:center;padding:2rem 1rem}
+.empty p{margin-left:auto;margin-right:auto}
 .divider{text-align:center;color:var(--rose);margin:1.2rem 0;letter-spacing:.6em}
 .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.7rem}
 dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:.2rem 1rem;margin:0}
@@ -267,7 +268,13 @@ const native=window.MarginaliaAndroid;
 let db,storageStatus=native?'Saved on device':'Saved in this browser';
 try { db=normalize(native?JSON.parse(native.load()):loadJSON(LS_DATA)||{}); }
 catch(err){document.body.textContent='The library could not be read. Reopen Marginalia to retry.';throw err;}
-let settings=Object.assign({theme:'auto',font:'system',size:18,spacious:false},loadJSON(LS_SET)||{});
+// Desktop windows default to a smaller text size than phones; a size the user picks is kept.
+const desktop=!native&&matchMedia('(min-width:900px) and (hover:hover) and (pointer:fine)').matches;
+const defaultSize=desktop?15:18;
+let settings=Object.assign({theme:'auto',font:'system',size:null,spacious:false},loadJSON(LS_SET)||{});
+// Earlier versions saved the old default (18) whenever any setting changed, so treat it as unset on desktop.
+if(settings.size===18&&desktop)settings.size=null;
+const textSize=()=>settings.size||defaultSize;
 const defaults=()=>({q:'',sort:'recent',mode:'all',min:'',max:'',from:'',to:'',include:{},exclude:{}});
 let F=defaults(), ed=null,edInitial='',pending=null;
 const opened=new Set();
@@ -689,7 +696,7 @@ function viewSettings(){
     <div class="row2">
       <label>Theme<select data-change="set" data-k="theme">${opt('auto','Match my device',settings.theme)}${opt('light','Light (parchment)',settings.theme)}${opt('dark','Dark (candlelit)',settings.theme)}</select></label>
       <label>Font<select data-change="set" data-k="font">${opt("system","System sans serif",settings.font)}${opt("serif","Serif",settings.font)}</select></label>
-      <label>Text size: ${settings.size}px<input type="range" min="15" max="26" step="1" value="${settings.size}" data-change="set" data-k="size" style="padding:0"></label>
+      <label>Text size: ${textSize()}px<input type="range" min="12" max="26" step="1" value="${textSize()}" data-change="set" data-k="size" style="padding:0"></label>
       <label style="align-self:end"><input type="checkbox" data-change="set" data-k="spacious" ${settings.spacious?'checked':''} style="width:auto;min-height:0"> Extra-roomy spacing</label>
     </div></div>
   <div class="panel"><h2>About</h2><p class="muted">Shortcuts: <kbd>/</kbd> search, <kbd>n</kbd> log something, <kbd>Ctrl</kbd>+<kbd>S</kbd> save the entry being edited, <kbd>Esc</kbd> close.</p>
@@ -893,7 +900,7 @@ function applyTheme(){
   const dark=settings.theme==='dark'||(settings.theme==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches);
   const r=document.documentElement;
   r.dataset.theme=dark?'dark':'light';r.dataset.font=settings.font;
-  r.style.setProperty('--fs',settings.size+'px');
+  r.style.setProperty('--fs',textSize()+'px');
   document.body.classList.toggle('spacious',!!settings.spacious);
   const tb=$('#themebtn');if(tb)tb.textContent=dark?'☀ Light':'☾ Dark';
 }
