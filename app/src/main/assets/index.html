@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-6i6tpJkQo8XqUI6mZYF4ySaUMFVcK/Wj6Ml8Ao9XfdA='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-jc5oP+D1++WW72eKBT+/LzZRwnfCI0lM+kj56o0l2Zw='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -311,9 +311,39 @@ const foodOf=k=>FOODS.find(f=>f.k===k);
 /* ---------- state ---------- */
 const LS_DATA='marginalia.data.v1',LS_SET='marginalia.settings.v1';
 const native=window.MarginaliaAndroid;
+/* Each account gets its own local library on this device (plus a Guest one), so switching accounts never
+   replaces or mixes them. The Android app still keeps a single library (its storage is native code). */
+const LS_PROFILES='marginalia.profiles.v1',LS_SYNC='marginalia.sync.v1';
+const blankLib=()=>({version:1,entries:[],franchises:[],lists:[],views:[],dismissed:[],deleted:{}});
+const blankRecord=user=>({user:user||'',token:'',last:'',mustChange:false,features:null,isAdmin:false,log:[],count:0,owner:''});
+const dataKey=slot=>slot?LS_DATA+'.u.'+slot:LS_DATA;   // the Guest library keeps the original key
+function bootProfiles(){
+  let P=loadJSON(LS_PROFILES);
+  if(!(P&&P.list&&typeof P.list==='object')){
+    // first run of this version: the old single-account state becomes one profile
+    const old=Object.assign(blankRecord(''),loadJSON(LS_SYNC)||{});
+    const slot=native?'':String(old.owner||old.user||'');
+    P={current:slot,list:{'':blankRecord('')},legacySlot:slot};
+    if(slot){
+      P.list[slot]=Object.assign(blankRecord(slot),old,{user:slot});
+      try{   // the old library belongs to that account: copy it, keep a backup, and leave the Guest library empty
+        const raw=localStorage.getItem(LS_DATA);
+        if(raw){localStorage.setItem(dataKey(slot),raw);localStorage.setItem(LS_DATA+'.premigration',raw);localStorage.setItem(LS_DATA,JSON.stringify(blankLib()));}
+        const fd=localStorage.getItem('marginalia.file.digest');if(fd)localStorage.setItem('marginalia.file.digest.'+slot,fd);
+        const bs=localStorage.getItem('marginalia.sync.base.v1');if(bs)localStorage.setItem('marginalia.sync.base.v1.'+slot,bs);
+      }catch(e){}
+    }else P.list['']=Object.assign(blankRecord(''),old);
+    try{localStorage.setItem(LS_PROFILES,JSON.stringify(P));}catch(e){}
+  }
+  for(const k of Object.keys(P.list))P.list[k]=Object.assign(blankRecord(k),P.list[k]);
+  if(!P.list['']) P.list['']=blankRecord('');
+  if(native||!P.list[P.current])P.current='';
+  return P;
+}
+let profiles=bootProfiles(),profileGen=0;
 const LOCAL_STATUS=native||window.MarginaliaDesktop?'Saved on device':'Saved in this browser';
 let db,storageStatus=LOCAL_STATUS;
-try { db=normalize(native?JSON.parse(native.load()):loadJSON(LS_DATA)||{}); }
+try { db=normalize(native?JSON.parse(native.load()):loadJSON(dataKey(profiles.current))||{}); }
 catch(err){document.body.textContent='The library could not be read. Reopen Marginalia to retry.';throw err;}
 // Desktop windows default to a smaller text size than phones; a size the user picks is kept.
 const desktop=!native&&matchMedia('(min-width:900px) and (hover:hover) and (pointer:fine)').matches;
@@ -339,13 +369,14 @@ function normalize(d){
 }
 function saveLocal(){
   try{const json=JSON.stringify(db);if(native){storageStatus=native.save(json);if(!storageStatus.startsWith('Saved'))throw Error(storageStatus);scheduleSync();}
-  else{localStorage.setItem(LS_DATA,json);if(fileHandle)syncFile(json);else storageStatus=LOCAL_STATUS;scheduleSync();}return true;}
+  else{localStorage.setItem(dataKey(profiles.current),json);if(sync.count!==db.entries.length){sync.count=db.entries.length;saveSync();}if(fileHandle)syncFile(json);else storageStatus=LOCAL_STATUS;scheduleSync();}return true;}
   catch(e){storageStatus='Save failed: '+e.message;toast(storageStatus);updateChrome();return false;}
 }
 function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}}
 /* ---------- desktop file link (File System Access API: Chrome, Edge and other Chromium browsers) ---------- */
 const canLink=!native&&!window.MarginaliaDesktop&&typeof window.showSaveFilePicker==='function';   // the desktop app uses account sync instead
 const LS_FDIGEST='marginalia.file.digest';
+const fdKey=()=>LS_FDIGEST+(profiles.current?'.'+profiles.current:''),hKey=()=>'handle'+(profiles.current?':'+profiles.current:'');
 let fileHandle=null,fileState='',queued=null,busy=false;
 const hashStr=s=>{let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677);}
   a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);
@@ -361,9 +392,9 @@ async function writeLinked(json){
   try{
     if(await fileHandle.queryPermission({mode:'readwrite'})!=='granted'){fileState='permission';setStatus('Saved in this browser only. Reconnect the linked file in Settings & files.');return;}
     const current=await (await fileHandle.getFile()).text();
-    if(current!==json&&hashStr(current)!==localStorage.getItem(LS_FDIGEST))throw Error('Linked file changed. Import it, then link a fresh file.');
+    if(current!==json&&hashStr(current)!==localStorage.getItem(fdKey()))throw Error('Linked file changed. Import it, then link a fresh file.');
     if(current!==json)await writeVerified(fileHandle,json);
-    localStorage.setItem(LS_FDIGEST,hashStr(json));fileState='ok';setStatus('Saved in this browser and to file');
+    localStorage.setItem(fdKey(),hashStr(json));fileState='ok';setStatus('Saved in this browser and to file');
   }catch(e){setStatus('Saved in this browser only. '+(e.message||e.name));}
 }
 async function flush(){
@@ -376,8 +407,8 @@ async function linkFile(){
     const h=await showSaveFilePicker({suggestedName:'marginalia-data.json',types:[{description:'Marginalia library',accept:{'application/json':['.json']}}]});
     const json=JSON.stringify(db);
     await writeVerified(h,json);
-    await kv('readwrite',s=>s.put(h,'handle'));
-    localStorage.setItem(LS_FDIGEST,hashStr(json));
+    await kv('readwrite',s=>s.put(h,hKey()));
+    localStorage.setItem(fdKey(),hashStr(json));
     fileHandle=h;fileState='ok';setStatus('Saved in this browser and to file');toast('Library file linked: '+h.name);render();
   }catch(e){if(e.name!=='AbortError')toast('Could not link file: '+(e.message||e.name));}
 }
@@ -388,13 +419,15 @@ async function reconnectFile(){
   }catch(e){toast('Could not reconnect: '+(e.message||e.name));}
 }
 async function unlinkFile(){
-  try{await kv('readwrite',s=>s.delete('handle'));}catch(e){}
-  localStorage.removeItem(LS_FDIGEST);fileHandle=null;fileState='';queued=null;setStatus(LOCAL_STATUS);render();toast('Library file unlinked');
+  try{await kv('readwrite',s=>s.delete(hKey()));}catch(e){}
+  localStorage.removeItem(fdKey());fileHandle=null;fileState='';queued=null;setStatus(LOCAL_STATUS);render();toast('Library file unlinked');
 }
 async function restoreLink(){
   if(!canLink)return;
   try{
-    const h=await kv('readonly',s=>s.get('handle'));if(!h)return;
+    let h=await kv('readonly',s=>s.get(hKey()));
+    if(!h&&profiles.current&&profiles.current===profiles.legacySlot)h=await kv('readonly',s=>s.get('handle'));   // linked before profiles existed
+    if(!h)return;
     fileHandle=h;
     if(await h.queryPermission({mode:'readwrite'})==='granted')syncFile(JSON.stringify(db));
     else{fileState='permission';setStatus('Saved in this browser only. Reconnect the linked file in Settings & files.');}
@@ -403,10 +436,9 @@ async function restoreLink(){
 }
 /* ---------- account & sync (optional; the library always works offline) ---------- */
 const API_BASE=/^https?:$/.test(location.protocol)?location.origin:'https://web-production-ac96f798.up.railway.app';
-const LS_SYNC='marginalia.sync.v1';
-let sync=Object.assign({user:'',token:'',owner:'',last:'',mustChange:false,features:null,isAdmin:false,log:[]},loadJSON(LS_SYNC)||{});
+let sync=profiles.list[profiles.current];
 let syncStatus='',syncing=false,syncAgain=false,syncTimer=null,skipSchedule=false,deferredRender=false,forceSnapshot=false;
-let authMode='login',authErr='',authBusy=false,pwOpen=false;
+let authMode='login',authErr='',authBusy=false,pwOpen=false,addingAccount=false;
 /* Feature flags. These are the defaults; a signed-in account gets its own values from the server
    (per-user overrides > server default > these). Current functionality is on. To ship something new to
    chosen users only, add it here as false, gate the feature with feat('name'), and turn it on for them. */
@@ -428,7 +460,7 @@ function applyFeatures(f,isAdmin){
   saveSync();setupPWA();
   if(editingInApp())deferredRender=true;else render();
 }
-const saveSync=()=>{try{localStorage.setItem(LS_SYNC,JSON.stringify(sync));}catch(e){}};
+const saveSync=()=>{try{localStorage.setItem(LS_PROFILES,JSON.stringify(profiles));}catch(e){}};
 const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
 const editingInApp=()=>{const a=document.activeElement;return !!(a&&a!==document.body&&$('#app').contains(a)&&a.matches('input,textarea,select'));};
 function setSync(msg){syncStatus=msg;updateChrome();if(route().p==='settings'&&!editingInApp())render();}
@@ -441,16 +473,17 @@ async function api(method,path,body,rev){
   let j=null;try{j=await r.json();}catch(e){}
   return {status:r.status,body:j||{}};
 }
-function signedOut(msg){sync.token='';sync.user='';sync.mustChange=false;sync.features=null;sync.isAdmin=false;saveSync();setupPWA();clearTimeout(syncTimer);setSync(msg||'');render();}
+function signedOut(msg){sync.token='';if(native)sync.user='';sync.mustChange=false;sync.features=null;sync.isAdmin=false;saveSync();setupPWA();clearTimeout(syncTimer);setSync(msg||'');render();}
 function needPassword(){sync.mustChange=true;saveSync();clearTimeout(syncTimer);setSync('Choose a new password to continue syncing');render();}
 async function syncNow(){
   if(!sync.token)return;
   if(sync.mustChange){setSync('Choose a new password to continue syncing');return;}
   if(syncing){syncAgain=true;return;}
-  syncing=true;setSync('Syncing…');
+  syncing=true;setSync('Syncing…');const gen=profileGen;
   try{
     for(let attempt=0;attempt<4;attempt++){
       const g=await api('GET','/api/library');
+      if(gen!==profileGen)return;   // switched account while this was in flight
       if(g.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
       if(g.status===403&&g.body.code==='must_change')return needPassword();
       if(g.status!==200)throw Error(g.body.error||'Server error '+g.status);
@@ -461,6 +494,7 @@ async function syncNow(){
       if(canon(merged)!==canon(db)){if(remote&&feat('sync_notices'))noteMerge(describeMerge(db,remote,merged));db=merged;skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}if(editingInApp())deferredRender=true;else render();}
       if(!(remote&&canon(remote)===canon(merged))){
         const p=await api('PUT','/api/library'+(forceSnapshot?'?snapshot=1':''),{data:merged},g.body.rev);
+        if(gen!==profileGen)return;
         if(p.status===200)forceSnapshot=false;
         if(p.status===409)continue;
         if(p.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
@@ -487,6 +521,20 @@ async function submitAuth(form){
   try{
     const r=await api('POST',authMode==='register'?'/api/register':'/api/login',{username,password,invite:v('invite')});
     if(r.status!==200)throw Error(r.body.error||'Could not sign in ('+r.status+')');
+    if(!native){
+      const user=r.body.username,had=!!profiles.list[user],hasData=db.entries.length+db.franchises.length>0;
+      let copy=false;   // only the Guest library is ever offered to an account, never another account's
+      if(!had&&profiles.current===''&&hasData)copy=confirm('The library on this device is not tied to any account. Add it to “'+user+'”?\n\nOK adds it to this account. Cancel keeps it separate as the Guest library, and “'+user+'” starts with its own library.');
+      const carry=JSON.stringify(db);
+      if(!had)profiles.list[user]=blankRecord(user);
+      Object.assign(profiles.list[user],{user,token:r.body.token,mustChange:!!r.body.mustChange,features:r.body.features||null,isAdmin:!!r.body.isAdmin});
+      if(!had&&copy)localStorage.setItem(dataKey(user),carry);
+      authBusy=false;addingAccount=false;authMode='login';   // next time the form shows, it is for signing in
+      switchProfile(user);
+      toast('Signed in as '+user);
+      if(profiles.list[user].mustChange){toast('Choose a new password to finish signing in');setSync('Choose a new password to continue syncing');location.hash='#/settings';render();}
+      return;
+    }
     sync.token=r.body.token;
     const user=r.body.username,hasLocal=db.entries.length+db.franchises.length>0;
     if(sync.owner&&sync.owner!==user&&hasLocal){
@@ -507,20 +555,66 @@ async function changePassword(form){
   if(!r){toast('Cannot reach the server');return;}
   if(r.status===200){pwOpen=false;sync.mustChange=false;saveSync();setSync('');render();toast('Password changed. Other devices were signed out.');syncNow();}else toast(r.body.error||'Could not change password');
 }
+/* ---------- accounts on this device ---------- */
+function resetTransient(){
+  F=defaults();lastView=null;picked.clear();genreOpen.clear();gsel.clear();gq='';
+  if(previewId)closePreview();
+  undoStack.length=0;
+  hist={rows:null,err:'',busy:false};adm={data:null,loading:false,err:'',note:''};shr={list:null,loading:false,note:''};sv={token:'',data:null,err:'',loading:false};
+  authErr='';authMode='login';pwOpen=false;addingAccount=false;syncStatus='';syncing=false;syncAgain=false;deferredRender=false;forceSnapshot=false;clearTimeout(syncTimer);
+}
+function switchProfile(slot){
+  if(native||!profiles.list[slot])return;
+  profileGen++;
+  profiles.current=slot;sync=profiles.list[slot];saveSync();
+  try{db=normalize(loadJSON(dataKey(slot))||{});}catch(e){db=normalize({});}
+  resetTransient();
+  fileHandle=null;fileState='';queued=null;busy=false;storageStatus=LOCAL_STATUS;
+  setupPWA();restoreLink();
+  if(/^#\/(admin|entry|list|franchise|shared)(\/|$)/.test(location.hash))location.hash='#/';   // those pages belong to the account we left
+  render();
+  if(sync.token&&!sync.mustChange)syncNow();
+}
+async function forgetProfile(slot){
+  const rec=profiles.list[slot];if(!rec)return;
+  const label=slot||'Guest';
+  if(!confirm('Remove “'+label+'” from this device?\n\n'+(slot?'Its library stays on the server if it was synced, but changes that have not synced yet are lost. Use Export everything first if unsure.':'The library that is only on this device (not in any account) is lost.')))return;
+  if(rec.token){try{await fetch(API_BASE+'/api/logout',{method:'POST',headers:{Authorization:'Bearer '+rec.token}});}catch(e){}}
+  const wasCurrent=profiles.current===slot;
+  if(slot===''){try{localStorage.setItem(dataKey(''),JSON.stringify(blankLib()));}catch(e){}profiles.list['']=blankRecord('');}
+  else{
+    try{localStorage.removeItem(dataKey(slot));localStorage.removeItem(LS_BASE+'.'+slot);localStorage.removeItem(LS_FDIGEST+'.'+slot);}catch(e){}
+    try{await kv('readwrite',s=>s.delete('handle:'+slot));}catch(e){}
+    delete profiles.list[slot];
+  }
+  if(wasCurrent){profileGen++;switchProfile('');}else{saveSync();render();}
+  toast('Removed “'+label+'” from this device');
+}
+function profilesPanel(){
+  if(native)return '';
+  const slots=Object.keys(profiles.list).filter(k=>k!==''||profiles.current===''||(profiles.list[''].count||0)>0).sort((a,b)=>(a===profiles.current?-1:b===profiles.current?1:a.localeCompare(b)));
+  if(slots.length<2)return '';
+  return `<div class="panel"><h2>Accounts on this device</h2><p class="muted">Each account keeps its own library here and syncs with its own account. Switching never replaces or mixes them, and an account that is signed out keeps its library and any edits you make until you sign in again.</p>
+  <ul class="runs">${slots.map(k=>{const r=profiles.list[k],cur=k===profiles.current;return `<li><b>${esc(k||'Guest')}</b> ${cur?'<span class="badge finished">viewing</span>':''} <span class="muted small">${k===''?'not in an account':r.token?'signed in':'signed out'} · ${plural(r.count||0,'book')}${r.last&&k?' · synced '+esc(new Date(r.last).toLocaleDateString()):''}</span> ${cur?'':`<button type="button" class="btn small" data-act="profile-switch" data-id="${esc(k)}">Switch to</button>`} <button type="button" class="btn small danger" data-act="profile-forget" data-id="${esc(k)}">Remove from this device</button></li>`;}).join('')}</ul></div>`;
+}
 function accountPanel(){
   if(sync.token&&sync.mustChange)return `<div class="panel"><h2>Choose a new password</h2><p>An administrator asked for a password change on <b>${esc(sync.user)}</b>. Syncing is paused until you choose a new one. Your library on this device is safe.</p>
   <form id="pwform" class="row2"><label>Temporary or current password<input type="password" name="password" autocomplete="current-password" required></label><label>New password (8+ characters)<input type="password" name="newPassword" autocomplete="new-password" minlength="8" required></label><div class="chips" style="align-self:end"><button class="btn primary" type="submit">Save new password</button><button class="btn" type="button" data-act="signout">Sign out</button></div></form></div>`;
   if(sync.token)return `<div class="panel"><h2>Account &amp; sync</h2><p>Signed in as <b>${esc(sync.user)}</b>. ${esc(syncStatus||'')}</p>
   ${(()=>{const d=Object.keys(FEATURES).filter(k=>feat(k)!==FEATURES[k]).map(k=>(feat(k)?'+ ':'− ')+(FEATURE_LABELS[k]||k));return d.length?`<p class="muted small">Different on this account: ${esc(d.join(', '))}</p>`:'';})()}
   <p class="muted">This library is saved on this device first, then merged with your account using the same rules as Import. Other devices signed in to this account stay in step. Everything keeps working offline.</p>
-  <div class="chips"><button class="btn" data-act="sync-now">Sync now</button><button class="btn" data-act="chpass">Change password</button><button class="btn" data-act="signout">Sign out</button></div>
+  <div class="chips"><button class="btn" data-act="sync-now">Sync now</button><button class="btn" data-act="chpass">Change password</button><button class="btn" data-act="signout">Sign out</button>${native?'':'<button class="btn" data-act="add-account">Add another account…</button>'}</div>
   ${pwOpen?`<form id="pwform" class="row2" style="margin-top:1rem"><label>Current password<input type="password" name="password" autocomplete="current-password" required></label><label>New password (8+ characters)<input type="password" name="newPassword" autocomplete="new-password" minlength="8" required></label><div class="chips" style="align-self:end"><button class="btn primary" type="submit">Save password</button></div></form>`:''}</div>`;
+  const intro=!native&&sync.user?'This is the library for “'+sync.user+'” on this device. You are signed out, so it is not syncing; anything you change is kept and merged when you sign in to that account again.':'Sign in to keep this library in step across your phone and computers. It still works offline, and signing in is optional.';
+  return authPanel('Account & sync',intro,sync.user);
+}
+function authPanel(title,intro,prefill){
   const reg=authMode==='register';
-  return `<div class="panel"><h2>Account &amp; sync</h2><p>Sign in to keep this library in step across your phone and computers. It still works offline, and signing in is optional.</p>
-  <form id="authform"><div class="row2"><label>Username<input type="text" name="username" autocomplete="username" required minlength="3" maxlength="32" autocapitalize="none" spellcheck="false"></label>
+  return `<div class="panel"><h2>${esc(title)}</h2><p>${esc(intro)}</p>
+  <form id="authform"><div class="row2"><label>Username<input type="text" name="username" autocomplete="username" required minlength="3" maxlength="32" autocapitalize="none" spellcheck="false" value="${esc(prefill||'')}"></label>
   <label>Password<input type="password" name="password" autocomplete="${reg?'new-password':'current-password'}" required minlength="${reg?8:1}"></label>
   ${reg?'<label>Invite code<input type="text" name="invite" autocomplete="off" spellcheck="false" required></label>':''}</div>
-  <div class="chips"><button class="btn primary" type="submit"${authBusy?' disabled':''}>${reg?'Create account':'Sign in'}</button><button class="btn" type="button" data-act="auth-mode">${reg?'I already have an account':'Create an account'}</button></div>
+  <div class="chips"><button class="btn primary" type="submit"${authBusy?' disabled':''}>${reg?'Create account':'Sign in'}</button><button class="btn" type="button" data-act="auth-mode">${reg?'I already have an account':'Create an account'}</button>${addingAccount?'<button class="btn" type="button" data-act="add-cancel">Cancel</button>':''}</div>
   <p class="small" role="alert" style="color:var(--danger)">${esc(authErr)}</p></form></div>`;
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sync.token)syncNow();});
@@ -549,9 +643,9 @@ async function installApp(){if(!installEvt)return;installEvt.prompt();try{await 
 let hist={rows:null,err:'',busy:false};
 const when=d=>new Date(d).toLocaleString([],{dateStyle:'medium',timeStyle:'short'});
 async function loadVersions(){
-  hist.busy=true;hist.err='';render();
-  try{const r=await api('GET','/api/versions');if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);hist.rows=r.body.versions;}
-  catch(e){hist.err=e instanceof TypeError?'Cannot reach the server.':e.message;}
+  const gen=profileGen;hist.busy=true;hist.err='';render();
+  try{const r=await api('GET','/api/versions');if(gen!==profileGen)return;if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);hist.rows=r.body.versions;}
+  catch(e){if(gen!==profileGen)return;hist.err=e instanceof TypeError?'Cannot reach the server.':e.message;}
   hist.busy=false;render();
 }
 async function restoreVersion(id){
@@ -583,7 +677,7 @@ function historyPanel(){
 /* ---------- sync notices (flag: sync_notices) ---------- */
 const LS_BASE='marginalia.sync.base.v1';
 function describeMerge(local,remote,merged){
-  const base=loadJSON(LS_BASE),recs=d=>new Map([...d.entries,...d.franchises].map(r=>[r.id,r])),nm=r=>'“'+(r.title||r.name||'item')+'”';
+  const base=loadJSON(baseKey()),recs=d=>new Map([...d.entries,...d.franchises].map(r=>[r.id,r])),nm=r=>'“'+(r.title||r.name||'item')+'”';
   const L=recs(local),R=recs(remote),M=recs(merged);
   const out={added:0,updated:0,removed:0,conflicts:[]};
   const both=(l,r,id)=>base&&base[id]&&r&&(l.updated||'')>base[id]&&(r.updated||'')>base[id]&&l.updated!==r.updated;
@@ -604,7 +698,8 @@ function noteMerge(o){
   sync.log=[{t:now(),text:text.trim(),conflicts:o.conflicts.slice(0,10)}].concat(sync.log||[]).slice(0,25);saveSync();
   toast(o.conflicts.length?'Sync: '+o.conflicts.length+' conflict'+(o.conflicts.length===1?'':'s')+' resolved, newest edit kept. Details in Settings.':text.trim());
 }
-const rememberBase=()=>{try{localStorage.setItem(LS_BASE,JSON.stringify(Object.fromEntries([...db.entries,...db.franchises].map(r=>[r.id,r.updated||'']))));}catch(e){}};
+const baseKey=()=>LS_BASE+(profiles.current?'.'+profiles.current:'');
+const rememberBase=()=>{try{localStorage.setItem(baseKey(),JSON.stringify(Object.fromEntries([...db.entries,...db.franchises].map(r=>[r.id,r.updated||'']))));}catch(e){}};
 function noticesPanel(){
   if(!feat('sync_notices')||!(sync.log||[]).length)return '';
   return `<div class="panel"><h2>Recent sync activity</h2><ul class="runs">${sync.log.map(e=>`<li><b>${esc(when(e.t))}</b> ${esc(e.text)}${e.conflicts&&e.conflicts.length?`<ul>${e.conflicts.map(c=>`<li class="small">${esc(c)}</li>`).join('')}</ul>`:''}</li>`).join('')}</ul>
@@ -660,9 +755,9 @@ function addQuick(){
 /* ---------- admin (server-enforced: only accounts marked admin) ---------- */
 let adm={data:null,loading:false,err:'',note:''};
 async function loadAdmin(){
-  adm.loading=true;
-  try{const r=await api('GET','/api/admin/overview');if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);adm.data=r.body;adm.err='';}
-  catch(e){adm.err=e instanceof TypeError?'Cannot reach the server.':e.message;}
+  const gen=profileGen;adm.loading=true;
+  try{const r=await api('GET','/api/admin/overview');if(gen!==profileGen)return;if(r.status!==200)throw Error(r.body.error||'Server error '+r.status);adm.data=r.body;adm.err='';}
+  catch(e){if(gen!==profileGen)return;adm.err=e instanceof TypeError?'Cannot reach the server.':e.message;}
   adm.loading=false;if(route().p==='admin'&&!editingInApp())render();
 }
 async function adminCall(method,path,body,okNote){
@@ -1014,8 +1109,8 @@ function importPanel(){
 let shr={list:null,loading:false,note:''};
 const shareLink=t=>(/^https?:$/.test(location.protocol)?location.origin:API_BASE)+'/#/shared/'+t;
 async function loadShares(){
-  shr.loading=true;
-  try{const r=await api('GET','/api/shares');if(r.status===200)shr.list=r.body.shares;else shr.list=[];}catch(e){shr.list=[];}
+  const gen=profileGen;shr.loading=true;
+  try{const r=await api('GET','/api/shares');if(gen!==profileGen)return;if(r.status===200)shr.list=r.body.shares;else shr.list=[];}catch(e){if(gen!==profileGen)return;shr.list=[];}
   shr.loading=false;if(route().p==='settings'&&!editingInApp())render();
 }
 async function copyText(t){try{await navigator.clipboard.writeText(t);return true;}catch(e){prompt('Copy this link:',t);return false;}}
@@ -1852,6 +1947,8 @@ function viewWrapped(arg){
 function viewSettings(){
   return `<h1>Settings &amp; files</h1>
   ${accountPanel()}
+  ${addingAccount&&sync.token?authPanel('Add another account','Sign in or create an account. This account stays signed in and keeps its own library on this device.',''):''}
+  ${profilesPanel()}
   ${historyPanel()}${noticesPanel()}${sharePanel()}
   ${feat('offline_app')&&installEvt?'<div class="panel"><h2>Install</h2><p>Install Marginalia as an app on this device. It opens in its own window and keeps working offline.</p><div class="chips"><button class="btn" data-act="install">Install app</button></div></div>':''}
   <div class="panel"><h2>Library files</h2><p>${esc(storageStatus)}</p>
@@ -2099,7 +2196,7 @@ function applyTheme(){
 function updateChrome(){
   const b=$('#syncbtn');
   if(b){
-    b.textContent=sync.token&&!/^Save failed/.test(storageStatus)?sync.user+' · '+(syncStatus||'Signed in').split(/\.\s/)[0]:storageStatus;b.title='Open account and file settings';
+    b.textContent=/^Save failed/.test(storageStatus)?storageStatus:sync.token?sync.user+' · '+(syncStatus||'Signed in').split(/\.\s/)[0]:(!native&&sync.user?sync.user+' · signed out':storageStatus);b.title='Open account and file settings';
   }
   document.querySelectorAll('nav.main a').forEach(a=>{const k=GATED_ROUTES[a.dataset.nav];a.hidden=a.dataset.nav==='admin'?!sync.isAdmin:a.dataset.nav==='tidy'?!tidyOn():(!!k&&!feat(k));});
   const q=$('#q');if(q&&document.activeElement!==q&&q.value!==F.q)q.value=F.q;
@@ -2186,6 +2283,10 @@ document.addEventListener('click',ev=>{
     case 'view-pin':{const w=listViewById(el.dataset.id);if(!w)break;w.pinned=!w.pinned;w.updated=now();changed();break;}
     case 'view-rename':{const w=listViewById(el.dataset.id),nm=w&&prompt('New name?',w.name);if(nm&&nm.trim()){w.name=nm.trim().slice(0,80);w.updated=now();changed();}break;}
     case 'view-del':{const w=listViewById(el.dataset.id),snap=undoSnap();if(w&&(snap||confirm('Delete the view “'+w.name+'”? Your books are not affected.'))){db.views=db.views.filter(x=>x.id!==w.id);db.deleted[w.id]=now();if(lastView===w.id)lastView=null;changed();offerUndo('Deleted view “'+w.name+'”',snap);}break;}
+    case 'profile-switch':switchProfile(el.dataset.id);break;
+    case 'profile-forget':forgetProfile(el.dataset.id);break;
+    case 'add-account':addingAccount=true;authMode='login';authErr='';render();break;
+    case 'add-cancel':addingAccount=false;authErr='';render();break;
     case 'export-all':exportEverything(!!($('#exp-versions')&&$('#exp-versions').checked));break;
     case 'undo':undoLast();break;
     case 'preview':openPreview(el.dataset.id);break;
