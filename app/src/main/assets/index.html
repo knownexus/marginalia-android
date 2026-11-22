@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-8CajoDFwhPLO0mzUCvR9WV77hbFQAqlwqYrnl5MburY='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-IWt412axPUiPtlEUkK1R3v8DB247jf/EFhIML6HLXEo='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -354,9 +354,21 @@ async function restoreLink(){
 /* ---------- account & sync (optional; the library always works offline) ---------- */
 const API_BASE=/^https?:$/.test(location.protocol)?location.origin:'https://web-production-ac96f798.up.railway.app';
 const LS_SYNC='marginalia.sync.v1';
-let sync=Object.assign({user:'',token:'',owner:'',last:'',mustChange:false},loadJSON(LS_SYNC)||{});
+let sync=Object.assign({user:'',token:'',owner:'',last:'',mustChange:false,features:null},loadJSON(LS_SYNC)||{});
 let syncStatus='',syncing=false,syncAgain=false,syncTimer=null,skipSchedule=false,deferredRender=false;
 let authMode='login',authErr='',authBusy=false,pwOpen=false;
+/* Feature flags. These are the defaults; a signed-in account gets its own values from the server
+   (per-user overrides > server default > these). Current functionality is on. To ship something new to
+   chosen users only, add it here as false, gate the feature with feat('name'), and turn it on for them. */
+const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true};
+const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import'};
+const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped'};
+const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
+function applyFeatures(f){
+  if(!f||typeof f!=='object'||canon(f)===canon(sync.features||{}))return;
+  sync.features=f;saveSync();
+  if(editingInApp())deferredRender=true;else render();
+}
 const saveSync=()=>{try{localStorage.setItem(LS_SYNC,JSON.stringify(sync));}catch(e){}};
 const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
 const editingInApp=()=>{const a=document.activeElement;return !!(a&&a!==document.body&&$('#app').contains(a)&&a.matches('input,textarea,select'));};
@@ -370,7 +382,7 @@ async function api(method,path,body,rev){
   let j=null;try{j=await r.json();}catch(e){}
   return {status:r.status,body:j||{}};
 }
-function signedOut(msg){sync.token='';sync.user='';sync.mustChange=false;saveSync();clearTimeout(syncTimer);setSync(msg||'');render();}
+function signedOut(msg){sync.token='';sync.user='';sync.mustChange=false;sync.features=null;saveSync();clearTimeout(syncTimer);setSync(msg||'');render();}
 function needPassword(){sync.mustChange=true;saveSync();clearTimeout(syncTimer);setSync('Choose a new password to continue syncing');render();}
 async function syncNow(){
   if(!sync.token)return;
@@ -383,6 +395,7 @@ async function syncNow(){
       if(g.status===401)return signedOut('Signed out. Sign in again to keep syncing.');
       if(g.status===403&&g.body.code==='must_change')return needPassword();
       if(g.status!==200)throw Error(g.body.error||'Server error '+g.status);
+      applyFeatures(g.body.features);
       const remote=g.body.data?normalize(g.body.data):null;
       let merged=db;
       if(remote)merged=mergeData(JSON.parse(JSON.stringify(db)),remote);
@@ -423,7 +436,7 @@ async function submitAuth(form){
       }
     }
     if(sync.owner&&sync.owner!==user){db=normalize({});skipSchedule=true;try{saveLocal();}finally{skipSchedule=false;}}
-    sync.user=user;sync.owner=user;sync.mustChange=!!r.body.mustChange;saveSync();authBusy=false;pwOpen=false;
+    sync.user=user;sync.owner=user;sync.mustChange=!!r.body.mustChange;sync.features=r.body.features||null;saveSync();authBusy=false;pwOpen=false;
     if(sync.mustChange){toast('Choose a new password to finish signing in');setSync('Choose a new password to continue syncing');location.hash='#/settings';render();return;}
     toast('Signed in as '+user);render();syncNow();
   }catch(e){authBusy=false;authErr=e instanceof TypeError?'Cannot reach the server. Check your connection.':e.message;render();}
@@ -438,6 +451,7 @@ function accountPanel(){
   if(sync.token&&sync.mustChange)return `<div class="panel"><h2>Choose a new password</h2><p>An administrator asked for a password change on <b>${esc(sync.user)}</b>. Syncing is paused until you choose a new one. Your library on this device is safe.</p>
   <form id="pwform" class="row2"><label>Temporary or current password<input type="password" name="password" autocomplete="current-password" required></label><label>New password (8+ characters)<input type="password" name="newPassword" autocomplete="new-password" minlength="8" required></label><div class="chips" style="align-self:end"><button class="btn primary" type="submit">Save new password</button><button class="btn" type="button" data-act="signout">Sign out</button></div></form></div>`;
   if(sync.token)return `<div class="panel"><h2>Account &amp; sync</h2><p>Signed in as <b>${esc(sync.user)}</b>. ${esc(syncStatus||'')}</p>
+  ${(()=>{const d=Object.keys(FEATURES).filter(k=>feat(k)!==FEATURES[k]).map(k=>(feat(k)?'+ ':'− ')+(FEATURE_LABELS[k]||k));return d.length?`<p class="muted small">Different on this account: ${esc(d.join(', '))}</p>`:'';})()}
   <p class="muted">This library is saved on this device first, then merged with your account using the same rules as Import. Other devices signed in to this account stay in step. Everything keeps working offline.</p>
   <div class="chips"><button class="btn" data-act="sync-now">Sync now</button><button class="btn" data-act="chpass">Change password</button><button class="btn" data-act="signout">Sign out</button></div>
   ${pwOpen?`<form id="pwform" class="row2" style="margin-top:1rem"><label>Current password<input type="password" name="password" autocomplete="current-password" required></label><label>New password (8+ characters)<input type="password" name="newPassword" autocomplete="new-password" minlength="8" required></label><div class="chips" style="align-self:end"><button class="btn primary" type="submit">Save password</button></div></form>`:''}</div>`;
@@ -523,6 +537,7 @@ function route(){const h=location.hash.replace(/^#\/?/,'');const [p,a]=h.split('
 let lastKey='';
 function render(){
   const r=route();
+  if(GATED_ROUTES[r.p]&&!feat(GATED_ROUTES[r.p])){location.replace('#/');return;}
   document.querySelectorAll('nav.main a').forEach(a=>{if(a.dataset.nav===r.p||(r.p==='entry'&&a.dataset.nav==='library')||(r.p==='franchise'&&a.dataset.nav==='franchises'))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   let html='';
   switch(r.p){
@@ -560,7 +575,7 @@ function viewHome(){
     ${qs('','', 'in the library',E.length)}
     ${qs('status','ongoing','in progress',ongoing.length)}
     ${qs('status','planned','planned',E.filter(e=>e.status==='planned').length)}
-    <a class="stat" href="#/wrapped"><b>${finThisYear}</b>finished in ${yr}</a>
+    ${feat('wrapped')?`<a class="stat" href="#/wrapped"><b>${finThisYear}</b>finished in ${yr}</a>`:`<div class="stat" style="cursor:default"><b>${finThisYear}</b>finished in ${yr}</div>`}
   </div>
   <h2>Right now</h2>
   ${ongoing.length?`<div class="grid">${ongoing.map(cardHTML).join('')}</div>`:'<p class="muted">Nothing marked as in progress.</p>'}
@@ -636,14 +651,14 @@ function viewEntry(id){
   const out=e.links.filter(l=>byId(l.to)).map(l=>{const t=byId(l.to);return `<li>${esc(REL[l.rel]?REL[l.rel].out:'is related to')} <a href="#/entry/${t.id}">${TYPES[t.type].icon} ${esc(t.title)}</a></li>`;});
   const inc=[];db.entries.forEach(x=>x.links.forEach(l=>{if(l.to===e.id)inc.push(`<li><a href="#/entry/${x.id}">${TYPES[x.type].icon} ${esc(x.title)}</a> ${esc(REL[l.rel]?REL[l.rel].out:'is related to')} this</li>`);}));
   const mention=db.entries.filter(x=>x.id!==e.id&&x.notes&&x.notes.toLowerCase().includes('[['+e.title.toLowerCase()+']]'));
-  const tls=[];db.franchises.forEach(f=>f.timelines.forEach(t=>{if(t.items.some(i=>i.entryId===e.id))tls.push(`<li><a href="#/franchise/${f.id}">${esc(f.name)}: ${esc(t.name)}</a></li>`);}));
+  const tls=[];if(feat('franchises'))db.franchises.forEach(f=>f.timelines.forEach(t=>{if(t.items.some(i=>i.entryId===e.id))tls.push(`<li><a href="#/franchise/${f.id}">${esc(f.name)}: ${esc(t.name)}</a></li>`);}));
   const runs=[...e.dates].sort((a,b)=>runDate(a).localeCompare(runDate(b)));
   return `<p><a href="#/library">← Library</a></p>
   <div class="entry-layout"><div>
   <div class="panel">
     <div class="card-top"><span class="type" style="font-size:2rem">${T.icon}</span><div><h1 style="margin:0">${esc(e.title)}</h1>
     <div class="muted">${esc(T.label)}${e.creator?` · ${esc(T.creator)}: ${esc(e.creator)}`:''}</div></div></div>
-    <div class="meta" style="margin:.7rem 0">${statusBadge(e.status)} ${fr?`<a href="#/franchise/${fr.id}">❦ ${esc(fr.name)}</a>`:''} ${progressText(e)?`<span class="muted">· ${esc(progressText(e))}</span>`:''}</div>
+    <div class="meta" style="margin:.7rem 0">${statusBadge(e.status)} ${fr?(feat('franchises')?`<a href="#/franchise/${fr.id}">❦ ${esc(fr.name)}</a>`:`<span>❦ ${esc(fr.name)}</span>`):''} ${progressText(e)?`<span class="muted">· ${esc(progressText(e))}</span>`:''}</div>
     ${e.genres.length?`<div class="chips">${e.genres.map(g=>`<span class="chip genre">${esc(g)}</span>`).join('')}</div>`:''}
     <div class="rate-grid" style="margin-top:.9rem">
       <div class="rate-box"><small>Stars</small>${e.stars!=null?starsHTML(e.stars)+` ${e.stars}/5`:'<span class="muted">not rated</span>'}</div>
@@ -788,12 +803,12 @@ function viewSettings(){
   ${accountPanel()}
   <div class="panel"><h2>Library files</h2><p>${esc(storageStatus)}</p>
   <p>Import all or selected records from another library. Link a JSON file to write a copy after each save.</p>
-  ${canLink&&fileHandle?`<p>Linked file: <b>${esc(fileHandle.name)}</b></p>`:''}
-  ${!native&&!canLink?'<p class="muted">This browser cannot keep a linked file. Your library is saved in this browser, so use Export backup regularly. Chrome and Edge can link a file.</p>':''}
-  <div class="chips">${native?'<button class="btn" data-act="link">Link a new file</button><button class="btn" data-act="share">Share backup</button>':''}
-  ${canLink?`${fileState==='permission'?'<button class="btn primary" data-act="reconnect">Reconnect file</button>':''}<button class="btn" data-act="link">${fileHandle?'Link a different file':'Link a file'}</button>${fileHandle?'<button class="btn" data-act="unlink">Unlink</button>':''}`:''}
+  ${canLink&&feat('file_link')&&fileHandle?`<p>Linked file: <b>${esc(fileHandle.name)}</b></p>`:''}
+  ${!native&&!canLink&&feat('file_link')?'<p class="muted">This browser cannot keep a linked file. Your library is saved in this browser, so use Export backup regularly. Chrome and Edge can link a file.</p>':''}
+  <div class="chips">${native&&feat('file_link')?'<button class="btn" data-act="link">Link a new file</button><button class="btn" data-act="share">Share backup</button>':''}
+  ${canLink&&feat('file_link')?`${fileState==='permission'?'<button class="btn primary" data-act="reconnect">Reconnect file</button>':''}<button class="btn" data-act="link">${fileHandle?'Link a different file':'Link a file'}</button>${fileHandle?'<button class="btn" data-act="unlink">Unlink</button>':''}`:''}
   <button class="btn" data-act="export">Export backup</button><button class="btn" data-act="import">Import and merge</button></div>
-  ${native?'':'<p class="muted small">You can also drop a backup .json file anywhere on this page to import it.</p>'}</div>
+  ${native||!feat('drag_drop_import')?'':'<p class="muted small">You can also drop a backup .json file anywhere on this page to import it.</p>'}</div>
   <div class="panel"><h2>Look &amp; readability</h2>
     <div class="row2">
       <label>Theme<select data-change="set" data-k="theme">${opt('auto','Match my device',settings.theme)}${opt('light','Light (parchment)',settings.theme)}${opt('dark','Dark (candlelit)',settings.theme)}</select></label>
@@ -801,7 +816,7 @@ function viewSettings(){
       <label>Text size: ${textSize()}px<input type="range" min="12" max="26" step="1" value="${textSize()}" data-change="set" data-k="size" style="padding:0"></label>
       <label style="align-self:end"><input type="checkbox" data-change="set" data-k="spacious" ${settings.spacious?'checked':''} style="width:auto;min-height:0"> Extra-roomy spacing</label>
     </div></div>
-  <div class="panel"><h2>About</h2><p class="muted">Shortcuts: <kbd>/</kbd> search, <kbd>n</kbd> log something, <kbd>Ctrl</kbd>+<kbd>S</kbd> save the entry being edited, <kbd>Esc</kbd> close.</p>
+  <div class="panel"><h2>About</h2>${feat('shortcuts')?'<p class="muted">Shortcuts: <kbd>/</kbd> search, <kbd>n</kbd> log something, <kbd>Ctrl</kbd>+<kbd>S</kbd> save the entry being edited, <kbd>Esc</kbd> close.</p>':''}
   <p class="muted" style="margin-bottom:0">Tip: in a note, write [[Another Entry Title]] and it becomes a link. Types, detail fields, rating scales and link relations are defined near the top of the script, so you can change them freely.</p></div>`;
 }
 
@@ -1011,6 +1026,7 @@ function updateChrome(){
   if(b){
     b.textContent=sync.token&&!/^Save failed/.test(storageStatus)?sync.user+' · '+(syncStatus||'Signed in').split(/\.\s/)[0]:storageStatus;b.title='Open account and file settings';
   }
+  document.querySelectorAll('nav.main a').forEach(a=>{const k=GATED_ROUTES[a.dataset.nav];a.hidden=!!k&&!feat(k);});
   const q=$('#q');if(q&&document.activeElement!==q&&q.value!==F.q)q.value=F.q;
 }
 
@@ -1084,14 +1100,16 @@ document.addEventListener('keydown',ev=>{
     else if(t.id==='q'){if(t.value){t.value='';F.q='';render();}t.blur();}
     return;
   }
+  if(!feat('shortcuts'))return;
   if(mod&&!ev.altKey&&(ev.key==='s'||ev.key==='S')){ev.preventDefault();if(ed)saveEditor();else toast(storageStatus);return;}
   if(mod&&ev.key==='Enter'&&ed){ev.preventDefault();saveEditor();return;}
   if(mod||ev.altKey||typing||!$('#overlay').hidden)return;
   if(ev.key==='/'){ev.preventDefault();const q=$('#q');q.focus();q.select();}
   else if(ev.key==='n'||ev.key==='N'){ev.preventDefault();openEditor();}
 });
-addEventListener('dragover',ev=>{if(ev.dataTransfer&&[...ev.dataTransfer.types].includes('Files'))ev.preventDefault();});
+addEventListener('dragover',ev=>{if(feat('drag_drop_import')&&ev.dataTransfer&&[...ev.dataTransfer.types].includes('Files'))ev.preventDefault();});
 addEventListener('drop',ev=>{
+  if(!feat('drag_drop_import'))return;
   const file=ev.dataTransfer&&ev.dataTransfer.files[0];if(!file)return;ev.preventDefault();
   if(ed||pending){toast('Finish what you are doing first');return;}
   file.text().then(preview,()=>toast('Could not read that file'));

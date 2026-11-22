@@ -24,6 +24,23 @@ Sync is optional. Without signing in, the library stays on the device as before.
 
 To reset a password, run `npm ci` in `server/`, then `DATABASE_URL=<database URL> node reset-password.js <username>`. Use the Postgres service's public URL from your own computer. It sets a random temporary password (printed once) and flags the account. At the next sign-in the user is asked to choose a new password, and nothing else works until they do. Add `--flag-only` to force a change without touching the current password, or set `TEMP_PASSWORD` to pick the temporary one. Either way the account is signed out everywhere and its library is untouched.
 
+### Feature flags (per-user rollout)
+
+Features can be switched on or off per account, so new functionality can reach chosen users first. A flag resolves in this order: the account's own setting, then the database default, then the default in the code. Everything that exists today defaults to on, so an account with no setting keeps it all. Signed-out use always follows the defaults in the page.
+
+Current flags: `franchises`, `stats`, `wrapped`, `file_link`, `shortcuts`, `drag_drop_import`. Manage them with `server/flags.js` (same `DATABASE_URL` as the password script):
+
+```
+node flags.js list                       # every flag, its defaults and per-user settings
+node flags.js show alice                 # what alice actually gets
+node flags.js off stats alice            # turn a flag off for one account
+node flags.js on new_editor alice        # turn a flag on for one account
+node flags.js clear new_editor alice     # back to the default
+node flags.js default on new_editor      # roll out to everyone without a setting
+```
+
+To ship something new to chosen users: add the flag in `index.html` (`FEATURES`, as `false`), wrap the feature in `feat('new_editor')`, deploy, then `node flags.js on new_editor <user>`. Accounts pick up changes at their next sync, within about a minute or when they reopen the app. Flags hide features in the page. They don't enforce anything on the server, which can check a flag with `featureOn()` in `server/features.js` when needed. By hand in SQL: `INSERT INTO user_features(user_id,flag,enabled) SELECT id,'new_editor',true FROM users WHERE username='alice' ON CONFLICT (user_id,flag) DO UPDATE SET enabled=true;`
+
 ### Use it on desktop
 
 Hosted at https://web-production-ac96f798.up.railway.app (Railway, built from the `Dockerfile` in this repo). Your library stays in your own browser. Opening the address on a new device starts empty, so move data with export and import.

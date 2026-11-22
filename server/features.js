@@ -1,0 +1,49 @@
+'use strict';
+// Per-user feature flags.
+// Resolution order, highest first:  user override  >  database default  >  code default (below).
+// Everything that exists today is "on" by default, so an account with no override keeps all of it.
+// To ship something new to chosen users only: add the flag here (or just in the page) with
+// default false, deploy, then turn it on for those accounts with `node flags.js on <flag> <user>`.
+
+const FLAG_DEFAULTS = {
+  franchises: true,       // Franchises page, timelines and franchise links
+  stats: true,            // Stats page
+  wrapped: true,          // Year wrapped page
+  file_link: true,        // Linked library file (desktop) and Link / Share backup (Android)
+  shortcuts: true,        // Keyboard shortcuts
+  drag_drop_import: true  // Drop a backup file on the page to import it
+};
+
+const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS feature_defaults (
+    flag TEXT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL,
+    updated TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE TABLE IF NOT EXISTS user_features (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    flag TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL,
+    updated TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, flag)
+  );`;
+
+const validFlag = f => typeof f === 'string' && /^[a-z][a-z0-9_]{1,40}$/.test(f);
+
+async function resolveFlags(db, userId) {
+  const [defaults, overrides] = await Promise.all([
+    db.query('SELECT flag, enabled FROM feature_defaults'),
+    db.query('SELECT flag, enabled FROM user_features WHERE user_id=$1', [userId])
+  ]);
+  const out = Object.assign({}, FLAG_DEFAULTS);
+  for (const r of defaults.rows) out[r.flag] = r.enabled;
+  for (const r of overrides.rows) out[r.flag] = r.enabled;
+  return out;
+}
+
+// For gating server behaviour in future: `if (await featureOn(pool, user.id, 'some_flag')) ...`
+async function featureOn(db, userId, flag) {
+  return !!(await resolveFlags(db, userId))[flag];
+}
+
+module.exports = { FLAG_DEFAULTS, SCHEMA, validFlag, resolveFlags, featureOn };

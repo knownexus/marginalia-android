@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
+const { SCHEMA: FEATURE_SCHEMA, resolveFlags } = require('./features');
 
 const PORT = Number(process.env.PORT) || 8080;
 const INVITE_CODE = process.env.INVITE_CODE || '';
@@ -41,6 +42,7 @@ async function init() {
       rev INTEGER NOT NULL,
       updated TIMESTAMPTZ NOT NULL DEFAULT now()
     );`);
+  await pool.query(FEATURE_SCHEMA);
 }
 
 /* ---------- helpers ---------- */
@@ -117,7 +119,7 @@ async function api(req, res, url) {
     let id;
     try { id = (await pool.query('INSERT INTO users(username,pw_salt,pw_hash) VALUES($1,$2,$3) RETURNING id', [username, salt, hash])).rows[0].id; }
     catch (e) { if (e.code === '23505') throw new HttpError(409, 'That username is taken'); throw e; }
-    return send(res, 200, { username, token: await newSession(id), mustChange: false }, cors);
+    return send(res, 200, { username, token: await newSession(id), mustChange: false, features: await resolveFlags(pool, id) }, cors);
   }
 
   if (route === 'POST /api/login') {
@@ -129,7 +131,7 @@ async function api(req, res, url) {
     const hash = await scrypt(String(body.password || ''), row ? row.pw_salt : '00'.repeat(16));
     if (!row || !safeEq(hash, row.pw_hash)) { fail('ip:' + ip); fail('user:' + username); throw new HttpError(401, 'Wrong username or password'); }
     attempts.delete('user:' + username);
-    return send(res, 200, { username, token: await newSession(row.id, row.must_reset), mustChange: row.must_reset }, cors);
+    return send(res, 200, { username, token: await newSession(row.id, row.must_reset), mustChange: row.must_reset, features: await resolveFlags(pool, row.id) }, cors);
   }
 
   const user = await auth(req);
@@ -159,7 +161,8 @@ async function api(req, res, url) {
     const r = await pool.query('SELECT data, rev FROM libraries WHERE user_id=$1', [user.id]);
     const row = r.rows[0];
     // data is stored text; embed it as-is so key order is preserved.
-    return send(res, 200, row ? '{"rev":' + row.rev + ',"data":' + row.data + '}' : '{"rev":0,"data":null}', cors);
+    const features = JSON.stringify(await resolveFlags(pool, user.id));
+    return send(res, 200, row ? '{"rev":' + row.rev + ',"data":' + row.data + ',"features":' + features + '}' : '{"rev":0,"data":null,"features":' + features + '}', cors);
   }
 
   if (route === 'PUT /api/library') {
