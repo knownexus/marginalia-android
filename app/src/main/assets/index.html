@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-c7e14nzm2DeMn62rdEsaD5Fb77Zk9F1eRoAxn33EM4I='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Ykx5o++zAiQ9zaM2aIHLLERRmh/O2wBocwO2oqVvBms='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -2230,45 +2230,80 @@ function deleteEntry(id){
 }
 
 /* ---------- sync with GitHub ---------- */
+let importSkipped=[];   // what the last parsed file left out, and why
+/* Reads a backup. Older or hand-edited files are repaired where that is safe (missing dates, odd ratings, stray fields);
+   a record that cannot be read is left out and reported, so one bad record no longer rejects the whole file. */
 function parseLibrary(text){
-  const fail=()=>{throw Error('Invalid Marginalia backup');};
-  const data=JSON.parse(text,(k,v)=>{if(['__proto__','constructor','prototype'].includes(k))fail();return v;});
+  const fail=why=>{throw Error(why||'Invalid Marginalia backup');};
+  let data;
+  try{data=JSON.parse(text,(k,v)=>{if(['__proto__','constructor','prototype'].includes(k))throw Error('unsafe');return v;});}
+  catch(e){fail(e.message==='unsafe'?'The file contains unsafe keys':'That is not a JSON file');}
   const obj=v=>v&&typeof v==='object'&&!Array.isArray(v);
   const id=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,160}$/.test(v)&&!(v in Object.prototype);
   const str=v=>typeof v==='string';
+  const S=v=>str(v)?v:'';
   const stamp=v=>str(v)&&Number.isFinite(Date.parse(v));
-  const list=(v,test)=>Array.isArray(v)&&v.every(test);
-  if(!obj(data)||data.version!==1||!Array.isArray(data.entries)||!Array.isArray(data.franchises)||!obj(data.deleted||{})||(data.lists!=null&&!Array.isArray(data.lists))||(data.views!=null&&!Array.isArray(data.views))||(data.dismissed!=null&&!(Array.isArray(data.dismissed)&&data.dismissed.length<=1000&&data.dismissed.every(x=>str(x)&&x.length<=1000))))fail();
-  data.lists=data.lists||[];data.views=data.views||[];
+  if(!obj(data)||!Array.isArray(data.entries))fail('That does not look like a Marginalia backup (no entries list)');
+  if(data.version!=null&&(typeof data.version!=='number'||data.version>1))fail('This backup was made by a newer version of Marginalia. Update the app and try again.');
+  const skipped=[],seen=new Set();
+  const take=(r,kind,label)=>{   // common checks for every record; returns false when it has to be left out
+    if(!obj(r)){skipped.push(kind+' that is not an object');return false;}
+    if(!id(r.id)){skipped.push(kind+' '+label(r)+' (no usable id)');return false;}
+    if(seen.has(r.id)){skipped.push(kind+' '+label(r)+' (duplicate id)');return false;}
+    seen.add(r.id);
+    r.created=stamp(r.created)?new Date(r.created).toISOString():IMPORT_STAMP;
+    r.updated=stamp(r.updated)?new Date(r.updated).toISOString():r.created;
+    return true;
+  };
   const cleanFilter=f=>{const o=defaults();if(!obj(f))return o;for(const k of ['q','sort','mode','min','max','from','to'])if(str(f[k]))o[k]=f[k];for(const side of ['include','exclude'])if(obj(f[side]))for(const [k,v] of Object.entries(f[side]))if(/^[a-z]+$/.test(k)&&Array.isArray(v)&&v.every(str))o[side][k]=v;return o;};
-  const seen=new Set();
-  for(const r of [...data.entries,...data.franchises,...data.lists,...data.views]){
-    if(!obj(r)||!id(r.id)||seen.has(r.id)||!stamp(r.updated)||!stamp(r.created))fail();
-    seen.add(r.id);r.updated=new Date(r.updated).toISOString();r.created=new Date(r.created).toISOString();
-  }
-  for(const [k,v] of Object.entries(data.deleted||{})){if(!id(k)||!stamp(v))fail();data.deleted[k]=new Date(v).toISOString();}
+  const nm=r=>'“'+(obj(r)&&str(r.title||r.name)?String(r.title||r.name).slice(0,40):'?')+'”';
+  const out={version:1,entries:[],franchises:[],lists:[],views:[],dismissed:[],deleted:{}};
   for(const e of data.entries){
-    if(!TYPE_KEYS.includes(e.type)||!str(e.title)||!['creator','status','notes','franchiseId','feeling','food','mix'].every(k=>e[k]==null||str(e[k]))||(e.mix!=null&&!(e.mix===''||MIX_KEYS.includes(e.mix)))||
-      !list(e.genres||[],str)||!list(e.links||[],l=>obj(l)&&id(l.to)&&Object.prototype.hasOwnProperty.call(REL,l.rel))||
-      !list(e.dates||[],r=>obj(r)&&['start','end','note'].every(k=>r[k]==null||str(r[k])))||
-      !obj(e.details||{})||!Object.values(e.details||{}).every(v=>str(v)||typeof v==='number')||
-      !list(e.listIds||[],id)||(e.workId!=null&&!(e.workId===''||id(e.workId)))||(e.url!=null&&!(str(e.url)&&(e.url===''||/^https?:\/\//i.test(e.url))&&e.url.length<=2000))||
-      (e.cover!=null&&!(str(e.cover)&&(e.cover===''||(e.cover.startsWith('data:image/')&&e.cover.length<=120000))))||
-      (e.stars!=null&&!STAR_STEPS.includes(e.stars)))fail();
+    if(!take(e,'Entry',nm))continue;
+    if(!TYPE_KEYS.includes(e.type)){skipped.push('Entry '+nm(e)+' (unknown type '+JSON.stringify(String(e.type).slice(0,20))+')');seen.delete(e.id);continue;}
+    if(!str(e.title)){skipped.push('Entry without a title');seen.delete(e.id);continue;}
+    for(const k of ['creator','status','notes','franchiseId','feeling'])e[k]=S(e[k]);
+    if(!STATUSES.some(x=>x[0]===e.status))e.status='planned';
+    e.mix=MIX_KEYS.includes(e.mix)?e.mix:'';if(!str(e.food))delete e.food;
+    e.genres=(Array.isArray(e.genres)?e.genres:[]).filter(str);
+    e.links=(Array.isArray(e.links)?e.links:[]).filter(l=>obj(l)&&id(l.to)&&Object.prototype.hasOwnProperty.call(REL,l.rel));
+    e.dates=(Array.isArray(e.dates)?e.dates:[]).filter(obj).map(r=>({start:S(r.start),end:S(r.end),note:S(r.note)}));
+    const det={};if(obj(e.details))for(const [k,v] of Object.entries(e.details))if(str(v)||(typeof v==='number'&&Number.isFinite(v)))det[k]=v;e.details=det;
+    e.listIds=(Array.isArray(e.listIds)?e.listIds:[]).filter(id);
+    e.workId=id(e.workId)?e.workId:'';
+    e.url=str(e.url)&&/^https?:\/\//i.test(e.url)&&e.url.length<=2000?e.url:'';
+    e.cover=str(e.cover)&&e.cover.startsWith('data:image/')&&e.cover.length<=120000?e.cover:'';
+    if(e.stars!=null){const n=Number(e.stars),r=Math.round(n*2)/2;e.stars=Number.isFinite(n)&&n>=0&&n<=5&&e.stars!==''?r:null;}
+    out.entries.push(e);
   }
-  for(const l of data.lists){if(!str(l.name)||(l.notes!=null&&!str(l.notes)))fail();}
-  for(const v of data.views){if(!str(v.name)||v.name.length>80||(v.pinned!=null&&typeof v.pinned!=='boolean'))fail();v.filter=cleanFilter(v.filter);}
-  for(const f of data.franchises){
-    if(!str(f.name)||(f.notes!=null&&!str(f.notes))||!list(f.timelines||[],t=>obj(t)&&id(t.id)&&str(t.name)&&list(t.items,i=>obj(i)&&id(i.id)&&id(i.entryId)&&(i.note==null||str(i.note)))))fail();
+  for(const f of Array.isArray(data.franchises)?data.franchises:[]){
+    if(!take(f,'Franchise',nm))continue;
+    if(!str(f.name)){skipped.push('Franchise without a name');seen.delete(f.id);continue;}
+    f.notes=S(f.notes);
+    f.timelines=(Array.isArray(f.timelines)?f.timelines:[]).filter(t=>obj(t)&&id(t.id)&&str(t.name)).map(t=>Object.assign({},t,{items:(Array.isArray(t.items)?t.items:[]).filter(i=>obj(i)&&id(i.id)&&id(i.entryId)).map(i=>Object.assign({},i,{note:S(i.note)}))}));
+    out.franchises.push(f);
   }
-  return normalize(data);
+  for(const l of Array.isArray(data.lists)?data.lists:[]){
+    if(!take(l,'List',nm))continue;
+    if(!str(l.name)){skipped.push('List without a name');seen.delete(l.id);continue;}
+    l.notes=S(l.notes);out.lists.push(l);
+  }
+  for(const v of Array.isArray(data.views)?data.views:[]){
+    if(!take(v,'View',nm))continue;
+    if(!str(v.name)||v.name.length>80){skipped.push('View '+nm(v));seen.delete(v.id);continue;}
+    v.pinned=v.pinned===true;v.filter=cleanFilter(v.filter);out.views.push(v);
+  }
+  if(obj(data.deleted))for(const [k,v] of Object.entries(data.deleted))if(id(k)&&stamp(v))out.deleted[k]=new Date(v).toISOString();
+  if(Array.isArray(data.dismissed))out.dismissed=data.dismissed.filter(x=>str(x)&&x.length<=1000).slice(0,1000);
+  importSkipped=skipped;
+  return normalize(out);
 }
 function dismissImport(){pending=null;$('#overlay').hidden=true;$('#overlay').innerHTML='';}
 function preview(text){
   try{const source=parseLibrary(text);pending=source;
     const records=[...source.entries.map(e=>[e.id,e.title]),...source.franchises.map(f=>[f.id,'Franchise · '+f.name]),...source.lists.map(l=>[l.id,'List · '+l.name]),...source.views.map(v=>[v.id,'View · '+v.name]),...Object.keys(source.deleted).map(k=>['del:'+k,'Deletion · '+(byId(k)?.title||frById(k)?.name||k)])];
     const o=$('#overlay');o.hidden=false;
-    o.innerHTML='<div class="modal" role="dialog"><h2>Import library</h2><p>Select the records to merge. Newer edits win for the same record.</p><button class="btn" id="pickAll">Select all</button> <button class="btn" id="pickNone">Select none</button><div id="picks">'+records.map(([k,n])=>'<label><input type="checkbox" checked value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</div><p id="counts" role="status"></p><button class="btn" id="dropImport">Cancel</button> <button class="btn primary" id="applyImport">Apply merge</button></div>';
+    o.innerHTML='<div class="modal" role="dialog"><h2>Import library</h2><p>Select the records to merge. Newer edits win for the same record.</p>'+(importSkipped.length?'<p class="muted small" role="status">'+importSkipped.length+' item'+(importSkipped.length===1?'':'s')+' in the file could not be read and '+(importSkipped.length===1?'was':'were')+' left out: '+esc(importSkipped.slice(0,5).join('; '))+(importSkipped.length>5?'; …':'')+'</p>':'')+'<button class="btn" id="pickAll">Select all</button> <button class="btn" id="pickNone">Select none</button><div id="picks">'+records.map(([k,n])=>'<label><input type="checkbox" checked value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</div><p id="counts" role="status"></p><button class="btn" id="dropImport">Cancel</button> <button class="btn primary" id="applyImport">Apply merge</button></div>';
     let result;
     function calculate(){
       const selected=new Set([...o.querySelectorAll('#picks input:checked')].map(el=>el.value));

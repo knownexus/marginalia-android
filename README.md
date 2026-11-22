@@ -4,6 +4,8 @@ Copy Marginalia.apk to an Android 8 or newer device and tap it in Files to insta
 
 ### Move a library
 
+Import reads older and hand-edited backups leniently: missing dates, odd ratings and stray fields are repaired, and a record that cannot be read is left out and listed in the import preview instead of rejecting the whole file. A file that isn't a Marginalia backup, or was made by a newer version, says so.
+
 For a new library, start with the [editable JSON template](examples/marginalia-template.json).
 
 In your original HTML tracker, open Settings and export its JSON backup. In the Android app, open **Settings & files → Import and merge**. Select individual records or the whole backup, review the counts and tap **Apply merge**. Cancel leaves the library as it was.
