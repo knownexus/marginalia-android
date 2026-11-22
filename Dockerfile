@@ -3,7 +3,7 @@ FROM node:22-alpine
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
-COPY server/index.js server/features.js ./
+COPY server/index.js server/features.js server/ao3.js ./
 COPY app/src/main/assets/index.html ./index.html
 COPY web ./web
 ENV NODE_ENV=production

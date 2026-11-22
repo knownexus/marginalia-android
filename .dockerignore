@@ -3,6 +3,7 @@
 !server/package-lock.json
 !server/index.js
 !server/features.js
+!server/ao3.js
 !web
 !web/**
 !app/src/main/assets/index.html
