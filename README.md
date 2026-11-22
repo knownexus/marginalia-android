@@ -4,7 +4,7 @@ Copy Marginalia.apk to an Android 8 or newer device and tap it in Files to insta
 
 ### Move a library
 
-The import review sorts every record into **Added**, **Updated** and **Already up to date** (and **Deletions**), each in its own expandable group (the first two open when they are short), with a tick box per record, so you can see exactly what will change before you apply it.
+Records you deleted earlier, or that a version restore removed, are no longer silently dropped by an import: they appear in a **Deleted earlier** group, unticked, and ticking them brings them back. The import review sorts every record into **Added**, **Updated** and **Already up to date** (and **Deletions**), each in its own expandable group (the first two open when they are short), with a tick box per record, so you can see exactly what will change before you apply it.
 
 Import reads older and hand-edited backups leniently: missing dates, odd ratings and stray fields are repaired, and a record that cannot be read is left out and listed in the import preview instead of rejecting the whole file. A file that isn't a Marginalia backup, or was made by a newer version, says so.
 

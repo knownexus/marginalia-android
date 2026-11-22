@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-+QFbeN+mInwvjbdDsHia+zIRWN4haSIqEQTIqu0KhTE='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-l0eyIcCtXMJUrGzavYiwgKuvVPcTcuNUxIvzDxvkF9I='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -2748,10 +2748,13 @@ function preview(text){
       for(const r of [...all.entries,...all.franchises,...all.lists,...all.views])m.set(r.id,!had.has(r.id)?'added':had.get(r.id)===canon(r)?'same':'updated');
       for(const e of source.entries){const cur=byId(e.id);if(cur&&cur.type==='book'&&e.type==='fanfic')m.set(e.id,'updated');}
       return m;}catch(x){return new Map();}})();
-    const by={added:[],updated:[],same:[],del:[]};
-    for(const [k,n] of records)by[k.startsWith('del:')?'del':(classes.get(k)||'added')].push([k,n]);
-    const picksHTML=[['added','Added'],['updated','Updated'],['same','Already up to date'],['del','Deletions']].filter(([st])=>by[st].length).map(([st,label])=>
-      '<details'+((st==='added'||st==='updated')&&by[st].length<=500?' open':'')+'><summary><b>'+label+'</b> ('+by[st].length+')</summary>'+by[st].map(([k,n])=>'<label><input type="checkbox" checked value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</details>').join('');
+    // records you (or a version restore) deleted after the file's copy was made: a plain merge silently drops them
+    const goneIds=new Set();
+    for(const r of [...source.entries,...source.franchises,...source.lists,...source.views])if(db.deleted[r.id]&&db.deleted[r.id]>=(r.updated||'')&&!byId(r.id)&&!frById(r.id)&&!listById(r.id))goneIds.add(r.id);
+    const by={added:[],updated:[],same:[],del:[],gone:[]};
+    for(const [k,n] of records)by[k.startsWith('del:')?'del':goneIds.has(k)?'gone':(classes.get(k)||'added')].push([k,n]);
+    const picksHTML=[['added','Added'],['updated','Updated'],['gone','Deleted earlier — tick to bring back'],['same','Already up to date'],['del','Deletions']].filter(([st])=>by[st].length).map(([st,label])=>
+      '<details'+((st==='added'||st==='updated'||st==='gone')&&by[st].length<=500?' open':'')+'><summary><b>'+label+'</b> ('+by[st].length+')</summary>'+(st==='gone'?'<p class="muted small">You deleted these earlier, or a version restore removed them. They are left out unless you tick them.</p>':'')+by[st].map(([k,n])=>'<label><input type="checkbox"'+(st==='gone'?'':' checked')+' value="'+esc(k)+'"> '+esc(n)+'</label>').join('')+'</details>').join('');
     const o=$('#overlay');o.hidden=false;
     o.innerHTML='<div class="modal" role="dialog"><h2>Import library</h2><p>Select the records to merge. Newer edits win for the same record.</p>'+(importSkipped.length?'<p class="muted small" role="status">'+importSkipped.length+' item'+(importSkipped.length===1?'':'s')+' in the file could not be read and '+(importSkipped.length===1?'was':'were')+' left out: '+esc(importSkipped.slice(0,5).join('; '))+(importSkipped.length>5?'; …':'')+'</p>':'')+'<button class="btn" id="pickAll">Select all</button> <button class="btn" id="pickNone">Select none</button><div id="picks">'+picksHTML+'</div><p id="counts" role="status"></p><button class="btn" id="dropImport">Cancel</button> <button class="btn primary" id="applyImport">Apply merge</button></div>';
     let result;
@@ -2762,7 +2765,9 @@ function preview(text){
       const lists=source.lists.filter(l=>selected.has(l.id)||entries.some(e=>(e.listIds||[]).includes(l.id)&&!listById(l.id)));
       const views=source.views.filter(v=>selected.has(v.id));
       const deleted=Object.fromEntries(Object.entries(source.deleted).filter(([k])=>selected.has('del:'+k)));
-      result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,lists,views,dismissed:source.dismissed,tagRules:source.tagRules,deleted})));
+      const dbCopy=JSON.parse(JSON.stringify(db)),imp=JSON.parse(JSON.stringify({entries,franchises,lists,views,dismissed:source.dismissed,tagRules:source.tagRules,deleted})),reviveAt=now();
+      for(const r of [...imp.entries,...imp.franchises,...imp.lists,...imp.views])if(goneIds.has(r.id)){r.updated=reviveAt;delete dbCopy.deleted[r.id];}   // ticked: bring it back
+      result=mergeData(dbCopy,imp);
       // a re-import keeps what you already have, but a story you hold as a book that the file says is fanfiction is retyped
       const incoming=new Map(entries.map(e=>[e.id,e]));let retyped=0;
       for(const e of result.entries){const inc=incoming.get(e.id);if(inc&&inc.type==='fanfic'&&e.type==='book'){toFanfic(e);retyped++;}}
