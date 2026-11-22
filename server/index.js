@@ -124,6 +124,7 @@ function send(res, status, body, extra = {}) {
   }, extra));
   res.end(buf);
 }
+const cors2 = type => Object.assign({}, cors, { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' });
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, If-Match', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Max-Age': '86400' };
 
 function validName(u) { return typeof u === 'string' && /^[a-z0-9_.-]{3,32}$/.test(u); }
@@ -315,6 +316,59 @@ async function admin(req, res, url, body, me) {
   throw new HttpError(404, 'Not found');
 }
 
+
+/* ---------- cover lookup (flag: cover_fetch) ---------- */
+// The page cannot reach image sites itself (its security policy only allows this server), so the server looks a cover
+// up and hands the image bytes back. Only these fixed hosts are ever contacted; the caller supplies search words, never a URL.
+const COVER_UP = Object.assign({ audible: 'https://api.audible.com', ol: 'https://openlibrary.org', olcovers: 'https://covers.openlibrary.org', gb: 'https://www.googleapis.com' },
+  process.env.COVER_UPSTREAM_TEST ? JSON.parse(process.env.COVER_UPSTREAM_TEST) : {});   // the override is for tests only
+const COVER_IMAGE_HOSTS = /(^|\.)(media-amazon\.com|ssl-images-amazon\.com|openlibrary\.org|archive\.org|books\.google\.com|googleusercontent\.com)$/;
+const MAX_COVER_BYTES = 2 * 1024 * 1024, COVER_PER_HOUR = 600;
+const coverUse = new Map();
+setInterval(() => { const t = Date.now(); for (const [k, v] of coverUse) if (v.reset < t) coverUse.delete(k); }, 60_000).unref();
+function coverQuota(userId) {
+  const t = Date.now(); let a = coverUse.get(userId);
+  if (!a || a.reset < t) { a = { n: 0, reset: t + 3600_000 }; coverUse.set(userId, a); }
+  if (++a.n > COVER_PER_HOUR) throw new HttpError(429, 'Cover lookups are limited to ' + COVER_PER_HOUR + ' an hour. Try again later.');
+}
+async function getJson(u) {
+  try { const r = await fetch(u, { signal: AbortSignal.timeout(10000), headers: { Accept: 'application/json' } }); return r.ok ? await r.json() : null; } catch { return null; }
+}
+async function getImage(u) {
+  let x; try { x = new URL(u); } catch { return null; }
+  if (x.protocol === 'http:' && !process.env.COVER_UPSTREAM_TEST) x.protocol = 'https:';
+  if (!process.env.COVER_UPSTREAM_TEST && !COVER_IMAGE_HOSTS.test(x.hostname)) return null;
+  try {
+    const r = await fetch(x, { signal: AbortSignal.timeout(15000) });
+    const type = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!r.ok || !/^image\/(jpeg|png|webp|gif)$/.test(type)) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    return buf.length > 1000 && buf.length <= MAX_COVER_BYTES ? { type, buf } : null;   // tiny files are placeholders
+  } catch { return null; }
+}
+async function findCover(title, creator, asin) {
+  if (asin) {
+    const j = await getJson(COVER_UP.audible + '/1.0/catalog/products/' + asin + '?response_groups=media');
+    const imgs = j && j.product && j.product.product_images;
+    const u = imgs && (imgs['500'] || imgs['252'] || Object.values(imgs)[0]);
+    if (u) { const im = await getImage(u); if (im) return im; }
+  }
+  if (title) {
+    const q = new URLSearchParams({ title, limit: '3', fields: 'cover_i' }); if (creator) q.set('author', creator);
+    const j = await getJson(COVER_UP.ol + '/search.json?' + q);
+    for (const d of (j && j.docs) || []) {
+      if (!Number.isInteger(d.cover_i)) continue;
+      const im = await getImage(COVER_UP.olcovers + '/b/id/' + d.cover_i + '-M.jpg?default=false'); if (im) return im;
+    }
+    const g = await getJson(COVER_UP.gb + '/books/v1/volumes?maxResults=3&q=' + encodeURIComponent('intitle:' + title + (creator ? ' inauthor:' + creator : '')));
+    for (const it of (g && g.items) || []) {
+      const l = it.volumeInfo && it.volumeInfo.imageLinks, u = l && (l.thumbnail || l.smallThumbnail);
+      if (u) { const im = await getImage(String(u).replace('&edge=curl', '')); if (im) return im; }
+    }
+  }
+  return null;
+}
+
 /* ---------- routes ---------- */
 async function api(req, res, url) {
   const route = req.method + ' ' + url.pathname;
@@ -404,6 +458,20 @@ async function api(req, res, url) {
     const rev = await writeLibrary(user.id, expected, text, lib.entries.length, url.searchParams.get('snapshot') === '1');
     if (rev == null) throw new HttpError(409, 'Library changed on another device');
     return send(res, 200, { rev }, cors);
+  }
+
+  /* ----- cover lookup ----- */
+  if (route === 'GET /api/cover') {
+    if (!(await featureOn(pool, user.id, 'cover_fetch'))) throw new HttpError(403, 'Cover lookup is not turned on for this account');
+    const title = String(url.searchParams.get('title') || '').trim().slice(0, 200);
+    const creator = String(url.searchParams.get('creator') || '').trim().slice(0, 120);
+    const asin = String(url.searchParams.get('asin') || '').trim().toUpperCase();
+    if (asin && !/^[A-Z0-9]{10}$/.test(asin)) throw new HttpError(400, 'Not a valid ASIN');
+    if (!title && !asin) throw new HttpError(400, 'A title is needed');
+    coverQuota(user.id);
+    const im = await findCover(title, creator, asin);
+    if (!im) throw new HttpError(404, 'No cover found');
+    return send(res, 200, im.buf, cors2(im.type));
   }
 
   /* ----- export everything (the parts the page does not already hold) ----- */

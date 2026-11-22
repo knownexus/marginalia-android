@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-DLzWScN8ouPBwv5HXNo8nqeuhgrFCncPcKGkRIUU/bM='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-c7e14nzm2DeMn62rdEsaD5Fb77Zk9F1eRoAxn33EM4I='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -471,10 +471,10 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false,addingAccount=false;
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
   version_history:false,offline_app:false,quick_add:false,sync_notices:false,
   covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false,
-  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false,editions:false};
+  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false,editions:false,cover_fetch:false};
 const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
   covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions',
-  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo',editions:'Editions'};
+  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo',editions:'Editions',cover_fetch:'Find covers automatically'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
@@ -828,12 +828,39 @@ async function makeCover(file){
   if(JSON.stringify(db).length+url.length>8000000)throw Error('The library is close to its size limit, so no more covers fit.');
   return url;
 }
+const coverFetchOn=()=>feat('covers')&&feat('cover_fetch')&&!!sync.token&&!sync.mustChange;
+async function fetchCoverFor(e){   // asks the server to look the cover up; returns a data URL, or '' when none was found
+  const m=/^aud-([A-Z0-9]{10})$/.exec(e.id||''),q=new URLSearchParams({title:e.title||'',creator:e.creator||''});
+  if(m)q.set('asin',m[1]);
+  const r=await fetch(API_BASE+'/api/cover?'+q,{headers:{Authorization:'Bearer '+sync.token}});
+  if(r.status===404)return '';
+  if(r.status===401){signedOut('Session expired. Sign in again.');throw Error('Signed out');}
+  if(!r.ok){let j=null;try{j=await r.json();}catch(x){}throw Error((j&&j.error)||'Cover lookup failed');}
+  return makeCover(await r.blob());
+}
+let coverBusy=false;
+async function bulkCovers(){
+  if(coverBusy)return;
+  const todo=pickedEntries().filter(e=>!e.cover);
+  if(!todo.length){toast('Every selected book already has a cover');return;}
+  coverBusy=true;const snap=undoSnap();let got=0,missed=0,err='';
+  try{
+    for(let i=0;i<todo.length;i++){
+      toast('Finding covers… '+(i+1)+' of '+todo.length);
+      const e=todo[i];
+      try{const c=await fetchCoverFor(e);if(c){e.cover=c;e.updated=now();got++;}else missed++;}catch(x){err=x.message;break;}
+    }
+  }finally{coverBusy=false;}
+  if(got)changed();
+  const msg='Found '+plural(got,'cover')+(missed?'; none for '+missed:'')+(err?'. Stopped: '+err:'');
+  if(got)offerUndo(msg,snap);else toast(msg);
+}
 const coverImg=(e,cls)=>feat('covers')&&e.cover?`<img class="cover${cls?' '+cls:''}" src="${esc(e.cover)}" alt="${cls?'Cover of '+esc(e.title):''}">`:'';
 function coverFields(){
   if(!feat('covers'))return '';
   return `<fieldset><legend>Cover and link</legend><div class="row2" style="margin-bottom:0">
     <label>Link (web address)<input name="url" type="text" inputmode="url" autocapitalize="none" spellcheck="false" value="${esc(ed.url||'')}" placeholder="https://…"></label>
-    <div><label>Cover image<input type="file" id="coverfile" accept="image/*"></label>${ed.cover?`<div class="chips" style="margin-top:.5rem"><img class="cover" src="${esc(ed.cover)}" alt="Current cover"><button type="button" class="btn small" data-act="ed-nocover">Remove cover</button></div>`:''}
+    <div><label>Cover image<input type="file" id="coverfile" accept="image/*"></label>${coverFetchOn()?`<button type="button" class="btn small" data-act="ed-findcover" style="margin-top:.4rem">Find cover online</button>`:''}${ed.cover?`<div class="chips" style="margin-top:.5rem"><img class="cover" src="${esc(ed.cover)}" alt="Current cover"><button type="button" class="btn small" data-act="ed-nocover">Remove cover</button></div>`:''}
     <p class="muted small" style="margin:.3rem 0 0">Images are shrunk to about 10 KB and stored in your library.</p></div></div></fieldset>`;
 }
 document.addEventListener('change',async ev=>{
@@ -1248,7 +1275,7 @@ function bulkBar(){
     <select data-change="bulk-status" aria-label="Set status for the selected"><option value="">Set status…</option>${STATUSES.map(s=>`<option value="${s[0]}">${esc(s[1])}</option>`).join('')}</select>
     ${feat('lists')?`<select data-change="bulk-list" aria-label="Add the selected to a list"><option value="">Add to list…</option>${[...db.lists].sort(byName).map(l=>opt(l.id,l.name,'')).join('')}<option value="__new">＋ New list…</option></select>`:''}
     <button type="button" class="btn small" data-act="bulk-genre" data-v="add">＋ Genre</button><button type="button" class="btn small" data-act="bulk-genre" data-v="remove">− Genre</button>
-    ${editionsOn()?'<button type="button" class="btn small" data-act="bulk-link" title="Count the selected books as one book with several editions">Link as editions</button>':''}<button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
+    ${editionsOn()?'<button type="button" class="btn small" data-act="bulk-link" title="Count the selected books as one book with several editions">Link as editions</button>':''}${coverFetchOn()?'<button type="button" class="btn small" data-act="bulk-covers" title="Look up covers online for the selected books that have none">Find covers</button>':''}<button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
 }
 const updateBulkBar=()=>{const w=$('#bulkwrap');if(w)w.innerHTML=bulkBar();};
 const pickedEntries=()=>[...picked].map(byId).filter(Boolean);
@@ -2418,6 +2445,8 @@ document.addEventListener('click',ev=>{
     case 'sel-none':picked.clear();render();break;
     case 'bulk-genre':bulkGenre(v);break;
     case 'bulk-delete':bulkDelete();break;
+    case 'ed-findcover':{syncDraft();if(!String(ed.title||'').trim()){toast('Add a title first');break;}toast('Looking…');fetchCoverFor(ed).then(c=>{if(!ed)return;if(c){ed.cover=c;paintEditor();toast('Cover found');}else toast('No cover found for that title');}).catch(x=>toast(x.message));break;}
+    case 'bulk-covers':bulkCovers();break;
     case 'ed-nocover':syncDraft();ed.cover='';paintEditor();break;
     case 'prog':bumpProgress(el.dataset.id,el.dataset.k,el.dataset.v);break;
     case 'list-create':{const inp=$('#list-new'),n=inp&&inp.value.trim();if(!n){toast('Name the list first');break;}const id=ensureList(n);changed();location.hash='#/list/'+id;break;}

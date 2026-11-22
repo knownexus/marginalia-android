@@ -18,6 +18,7 @@ const FLAG_DEFAULTS = {
   quick_add: false,       // One-line quick add on Home
   sync_notices: false,    // Say what a sync merged and when edits conflicted
   covers: false,          // Cover images and a link on each entry
+  cover_fetch: false,     // Find covers automatically for new books (needs covers)
   progress: false,        // One-tap progress buttons (+10 pages, next episode, +1 h, finish)
   lists: false,           // Named lists beyond franchises
   stats_plus: false,      // Year-over-year, ratings by genre, pace chart, wrapped as an image
