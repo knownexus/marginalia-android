@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-l9mTPOvzC9fFDK9zZbX+jERBywFRI4SwREoT3AACHek='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HOpzgAewdreYrh26qTyvS2y0vNhSuSsdRIpsYYUMs48='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1a1320">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -113,6 +113,17 @@ dl.kv dt{color:var(--muted);font-weight:700} dl.kv dd{margin:0}
 .rate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.7rem}
 .rate-box{border:2px solid var(--border);border-radius:10px;padding:.5rem .7rem}
 .rate-box small{display:block;color:var(--muted);font-weight:700}
+
+/* wide screens (desktop) */
+.entry-layout{display:grid;gap:0 1.2rem}
+kbd{font:inherit;font-size:.85em;border:2px solid var(--border);border-bottom-width:3px;border-radius:6px;padding:0 .35rem;background:var(--bg)}
+@media (min-width:1100px){
+  .wrap{max-width:1240px;padding:0 1.5rem}
+  .entry-layout{grid-template-columns:minmax(0,2fr) minmax(0,3fr);align-items:start}
+  .modal{max-width:860px}
+}
+@media (min-width:1700px){.wrap{max-width:1480px}}
+@media (hover:hover) and (pointer:fine){.tools input[type=search]{width:16rem}}
 
 /* bars */
 .bars{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
@@ -253,7 +264,7 @@ const foodOf=k=>FOODS.find(f=>f.k===k);
 /* ---------- state ---------- */
 const LS_DATA='marginalia.data.v1',LS_SET='marginalia.settings.v1';
 const native=window.MarginaliaAndroid;
-let db,storageStatus='Saved on device';
+let db,storageStatus=native?'Saved on device':'Saved in this browser';
 try { db=normalize(native?JSON.parse(native.load()):loadJSON(LS_DATA)||{}); }
 catch(err){document.body.textContent='The library could not be read. Reopen Marginalia to retry.';throw err;}
 let settings=Object.assign({theme:'auto',font:'system',size:18,spacious:false},loadJSON(LS_SET)||{});
@@ -271,10 +282,68 @@ function normalize(d){
 }
 function saveLocal(){
   try{const json=JSON.stringify(db);if(native){storageStatus=native.save(json);if(!storageStatus.startsWith('Saved'))throw Error(storageStatus);}
-  else localStorage.setItem(LS_DATA,json);return true;}
+  else{localStorage.setItem(LS_DATA,json);if(fileHandle)syncFile(json);else storageStatus='Saved in this browser';}return true;}
   catch(e){storageStatus='Save failed: '+e.message;toast(storageStatus);updateChrome();return false;}
 }
 function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}}
+/* ---------- desktop file link (File System Access API: Chrome, Edge and other Chromium browsers) ---------- */
+const canLink=!native&&typeof window.showSaveFilePicker==='function';
+const LS_FDIGEST='marginalia.file.digest';
+let fileHandle=null,fileState='',queued=null,busy=false;
+const hashStr=s=>{let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677);}
+  a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);
+  return (4294967296*(2097151&b)+(a>>>0)).toString(36)+'.'+s.length;};
+const kv=(mode,fn)=>new Promise((res,rej)=>{const o=indexedDB.open('marginalia',1);o.onupgradeneeded=()=>o.result.createObjectStore('kv');o.onerror=()=>rej(o.error);
+  o.onsuccess=()=>{const conn=o.result,tx=conn.transaction('kv',mode),r=fn(tx.objectStore('kv'));tx.oncomplete=()=>{conn.close();res(r.result);};tx.onerror=()=>{conn.close();rej(tx.error);};};});
+function setStatus(msg){const same=storageStatus===msg;storageStatus=msg;updateChrome();if(!same&&route().p==='settings')render();}
+async function writeVerified(h,text){
+  const w=await h.createWritable();await w.write(text);await w.close();
+  if(await (await h.getFile()).text()!==text)throw Error('File verification failed');
+}
+async function writeLinked(json){
+  try{
+    if(await fileHandle.queryPermission({mode:'readwrite'})!=='granted'){fileState='permission';setStatus('Saved in this browser only. Reconnect the linked file in Settings & files.');return;}
+    const current=await (await fileHandle.getFile()).text();
+    if(current!==json&&hashStr(current)!==localStorage.getItem(LS_FDIGEST))throw Error('Linked file changed. Import it, then link a fresh file.');
+    if(current!==json)await writeVerified(fileHandle,json);
+    localStorage.setItem(LS_FDIGEST,hashStr(json));fileState='ok';setStatus('Saved in this browser and to file');
+  }catch(e){setStatus('Saved in this browser only. '+(e.message||e.name));}
+}
+async function flush(){
+  if(busy)return;busy=true;
+  try{while(queued!==null){const json=queued;queued=null;await writeLinked(json);}}finally{busy=false;}
+}
+function syncFile(json){if(fileHandle){queued=json;flush();}}
+async function linkFile(){
+  try{
+    const h=await showSaveFilePicker({suggestedName:'marginalia-data.json',types:[{description:'Marginalia library',accept:{'application/json':['.json']}}]});
+    const json=JSON.stringify(db);
+    await writeVerified(h,json);
+    await kv('readwrite',s=>s.put(h,'handle'));
+    localStorage.setItem(LS_FDIGEST,hashStr(json));
+    fileHandle=h;fileState='ok';setStatus('Saved in this browser and to file');toast('Library file linked: '+h.name);render();
+  }catch(e){if(e.name!=='AbortError')toast('Could not link file: '+(e.message||e.name));}
+}
+async function reconnectFile(){
+  try{
+    if(await fileHandle.requestPermission({mode:'readwrite'})!=='granted')throw Error('Permission was not granted');
+    syncFile(JSON.stringify(db));
+  }catch(e){toast('Could not reconnect: '+(e.message||e.name));}
+}
+async function unlinkFile(){
+  try{await kv('readwrite',s=>s.delete('handle'));}catch(e){}
+  localStorage.removeItem(LS_FDIGEST);fileHandle=null;fileState='';queued=null;setStatus('Saved in this browser');render();toast('Library file unlinked');
+}
+async function restoreLink(){
+  if(!canLink)return;
+  try{
+    const h=await kv('readonly',s=>s.get('handle'));if(!h)return;
+    fileHandle=h;
+    if(await h.queryPermission({mode:'readwrite'})==='granted')syncFile(JSON.stringify(db));
+    else{fileState='permission';setStatus('Saved in this browser only. Reconnect the linked file in Settings & files.');}
+    if(route().p==='settings')render();
+  }catch(e){}
+}
 function changed(){saveLocal();render();}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200);}
 
@@ -462,6 +531,7 @@ function viewEntry(id){
   const tls=[];db.franchises.forEach(f=>f.timelines.forEach(t=>{if(t.items.some(i=>i.entryId===e.id))tls.push(`<li><a href="#/franchise/${f.id}">${esc(f.name)}: ${esc(t.name)}</a></li>`);}));
   const runs=[...e.dates].sort((a,b)=>runDate(a).localeCompare(runDate(b)));
   return `<p><a href="#/library">← Library</a></p>
+  <div class="entry-layout"><div>
   <div class="panel">
     <div class="card-top"><span class="type" style="font-size:2rem">${T.icon}</span><div><h1 style="margin:0">${esc(e.title)}</h1>
     <div class="muted">${esc(T.label)}${e.creator?` · ${esc(T.creator)}: ${esc(e.creator)}`:''}</div></div></div>
@@ -476,11 +546,13 @@ function viewEntry(id){
   </div>
   ${runs.length?`<div class="panel"><h2>Dates</h2><ul class="runs">${runs.map((r,i)=>`<li><b>${runs.length>1?`Run ${i+1}: `:''}</b>${r.start?fmtDate(r.start):'?'}${r.end?` → ${fmtDate(r.end)}`:(r.start?' → …':'')}${r.note?` <span class="muted">— ${esc(r.note)}</span>`:''}</li>`).join('')}</ul></div>`:''}
   ${fieldRows?`<div class="panel"><h2>Details</h2><dl class="kv">${fieldRows}</dl></div>`:''}
+  </div><div>
   ${e.notes?`<div class="panel"><h2>Notes</h2><div class="notes">${renderNotes(e.notes)}</div></div>`:''}
   ${(out.length||inc.length||mention.length||tls.length)?`<div class="panel"><h2>Connections</h2>
     ${out.length||inc.length?`<ul>${out.join('')}${inc.join('')}</ul>`:''}
     ${mention.length?`<p class="muted" style="margin-bottom:0">Mentioned in the notes of: ${mention.map(x=>`<a href="#/entry/${x.id}">${esc(x.title)}</a>`).join(', ')}</p>`:''}
-    ${tls.length?`<p class="muted" style="margin-bottom:0">Appears in timelines:</p><ul>${tls.join('')}</ul>`:''}</div>`:''}`;
+    ${tls.length?`<p class="muted" style="margin-bottom:0">Appears in timelines:</p><ul>${tls.join('')}</ul>`:''}</div>`:''}
+  </div></div>`;
 }
 function viewFranchises(){
   const frs=[...db.franchises].sort(byName);
@@ -607,8 +679,12 @@ function viewSettings(){
   return `<h1>Settings &amp; files</h1>
   <div class="panel"><h2>Library files</h2><p>${esc(storageStatus)}</p>
   <p>Import all or selected records from another library. Link a JSON file to write a copy after each save.</p>
+  ${canLink&&fileHandle?`<p>Linked file: <b>${esc(fileHandle.name)}</b></p>`:''}
+  ${!native&&!canLink?'<p class="muted">This browser cannot keep a linked file. Your library is saved in this browser, so use Export backup regularly. Chrome and Edge can link a file.</p>':''}
   <div class="chips">${native?'<button class="btn" data-act="link">Link a new file</button><button class="btn" data-act="share">Share backup</button>':''}
-  <button class="btn" data-act="export">Export backup</button><button class="btn" data-act="import">Import and merge</button></div></div>
+  ${canLink?`${fileState==='permission'?'<button class="btn primary" data-act="reconnect">Reconnect file</button>':''}<button class="btn" data-act="link">${fileHandle?'Link a different file':'Link a file'}</button>${fileHandle?'<button class="btn" data-act="unlink">Unlink</button>':''}`:''}
+  <button class="btn" data-act="export">Export backup</button><button class="btn" data-act="import">Import and merge</button></div>
+  ${native?'':'<p class="muted small">You can also drop a backup .json file anywhere on this page to import it.</p>'}</div>
   <div class="panel"><h2>Look &amp; readability</h2>
     <div class="row2">
       <label>Theme<select data-change="set" data-k="theme">${opt('auto','Match my device',settings.theme)}${opt('light','Light (parchment)',settings.theme)}${opt('dark','Dark (candlelit)',settings.theme)}</select></label>
@@ -616,7 +692,8 @@ function viewSettings(){
       <label>Text size: ${settings.size}px<input type="range" min="15" max="26" step="1" value="${settings.size}" data-change="set" data-k="size" style="padding:0"></label>
       <label style="align-self:end"><input type="checkbox" data-change="set" data-k="spacious" ${settings.spacious?'checked':''} style="width:auto;min-height:0"> Extra-roomy spacing</label>
     </div></div>
-  <div class="panel"><h2>About</h2><p class="muted" style="margin-bottom:0">Tip: in a note, write [[Another Entry Title]] and it becomes a link. Types, detail fields, rating scales and link relations are defined near the top of the script, so you can change them freely.</p></div>`;
+  <div class="panel"><h2>About</h2><p class="muted">Shortcuts: <kbd>/</kbd> search, <kbd>n</kbd> log something, <kbd>Ctrl</kbd>+<kbd>S</kbd> save the entry being edited, <kbd>Esc</kbd> close.</p>
+  <p class="muted" style="margin-bottom:0">Tip: in a note, write [[Another Entry Title]] and it becomes a link. Types, detail fields, rating scales and link relations are defined near the top of the script, so you can change them freely.</p></div>`;
 }
 
 /* ---------- editor ---------- */
@@ -870,7 +947,9 @@ document.addEventListener('click',ev=>{
     case 'tl-up':if(i>0){[tline.items[i-1],tline.items[i]]=[tline.items[i],tline.items[i-1]];fr.updated=now();changed();}break;
     case 'tl-down':if(i<tline.items.length-1){[tline.items[i+1],tline.items[i]]=[tline.items[i],tline.items[i+1]];fr.updated=now();changed();}break;
     /* settings */
-    case 'link':case 'share':if(native)native.action(a);break;
+    case 'link':case 'share':if(native)native.action(a);else if(a==='link'&&canLink)linkFile();break;
+    case 'reconnect':if(fileHandle)reconnectFile();break;
+    case 'unlink':if(fileHandle&&confirm('Stop saving to the linked file? The file stays as it is.'))unlinkFile();break;
     case 'export':{if(native){native.action('export');break;}const blob=new Blob([JSON.stringify(db,null,1)],{type:'application/json'});const u=URL.createObjectURL(blob);const l=document.createElement('a');l.href=u;l.download='marginalia-backup-'+today()+'.json';l.click();setTimeout(()=>URL.revokeObjectURL(u),2000);break;}
     case 'import':window.MarginaliaAndroid?native.action('import'):$('#importfile').click();break;
   }
@@ -885,7 +964,25 @@ document.addEventListener('change',ev=>{
   else if(c==='tl-note'){const f=frById(el.dataset.f);const t=f&&f.timelines.find(x=>x.id===el.dataset.t);if(t&&t.items[Number(el.dataset.i)]){t.items[Number(el.dataset.i)].note=el.value;f.updated=now();saveLocal();}}
 });
 document.addEventListener('submit',ev=>{if(ev.target.id==='editor'){ev.preventDefault();saveEditor();}});
-document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&ed)closeEditor();});
+document.addEventListener('keydown',ev=>{
+  const mod=ev.ctrlKey||ev.metaKey,t=ev.target,typing=!!(t.closest&&t.closest('input,textarea,select,[contenteditable]'));
+  if(ev.key==='Escape'){
+    if(pending)dismissImport();else if(ed)closeEditor();
+    else if(t.id==='q'){if(t.value){t.value='';F.q='';render();}t.blur();}
+    return;
+  }
+  if(mod&&!ev.altKey&&(ev.key==='s'||ev.key==='S')){ev.preventDefault();if(ed)saveEditor();else toast(storageStatus);return;}
+  if(mod&&ev.key==='Enter'&&ed){ev.preventDefault();saveEditor();return;}
+  if(mod||ev.altKey||typing||!$('#overlay').hidden)return;
+  if(ev.key==='/'){ev.preventDefault();const q=$('#q');q.focus();q.select();}
+  else if(ev.key==='n'||ev.key==='N'){ev.preventDefault();openEditor();}
+});
+addEventListener('dragover',ev=>{if(ev.dataTransfer&&[...ev.dataTransfer.types].includes('Files'))ev.preventDefault();});
+addEventListener('drop',ev=>{
+  const file=ev.dataTransfer&&ev.dataTransfer.files[0];if(!file)return;ev.preventDefault();
+  if(ed||pending){toast('Finish what you are doing first');return;}
+  file.text().then(preview,()=>toast('Could not read that file'));
+});
 $('#q').addEventListener('input',e=>{F.q=e.target.value;if(route().p!=='library')location.hash='#/library';else render();});
 $('#importfile').addEventListener('change',e=>{
   const file=e.target.files[0];if(!file)return;
@@ -924,7 +1021,7 @@ window.addEventListener('resize',()=>requestAnimationFrame(()=>{
 }));
 window.marginaliaBack=()=>{if(pending){dismissImport();return true;}if(ed){closeEditor();return true;}if(route().p!=='home'){location.hash='#/';return true;}return false;};
 document.addEventListener('toggle',ev=>{const k=ev.target.dataset?.group;if(k){if(ev.target.open)opened.add(k);else opened.delete(k);}},true);
-applyTheme();render();
+applyTheme();render();restoreLink();
 const savedDraft=loadJSON('marginalia.draft');
 if(savedDraft){ed=savedDraft.data;edInitial=savedDraft.initial;$('#overlay').hidden=false;paintEditor();}
 else if(native&&!native.linked()&&!localStorage.getItem('welcomed')){localStorage.setItem('welcomed','1');location.hash='#/settings';}
