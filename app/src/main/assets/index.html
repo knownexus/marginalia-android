@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Ykx5o++zAiQ9zaM2aIHLLERRmh/O2wBocwO2oqVvBms='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-X87a7ht72Vg3smKUujHNzrGUJfSUX1/EiJl50ju3dpw='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -252,12 +252,16 @@ const TYPES={
   book:{label:'Book',icon:'📖',creator:'Author',fields:[
     {k:'pages',label:'Pages',kind:'number'},
     {k:'currentPage',label:'Current page',kind:'number'},
-    {k:'format',label:'Format',kind:'select',options:['Paper','E-book','Audiobook','Comic / manga']},
+    {k:'format',label:'Format',kind:'select',options:['Paper','E-book','Audiobook','Comic / manga','Fanfic','Web novel']},
     {k:'series',label:'Series / volume',kind:'text'},
     {k:'narrator',label:'Narrator',kind:'text',flag:'import_trackers'},
     {k:'audioHours',label:'Audiobook length (hours)',kind:'number',flag:'import_trackers'},
     {k:'audibleRating',label:'Audible rating (listeners, of 5)',kind:'number',flag:'import_trackers'},
-    {k:'narrationRating',label:'Narration rating (listeners, of 5)',kind:'number',flag:'import_trackers'}]},
+    {k:'narrationRating',label:'Narration rating (listeners, of 5)',kind:'number',flag:'import_trackers'},
+    {k:'words',label:'Word count',kind:'number',flag:'import_trackers'},
+    {k:'chapters',label:'Chapters',kind:'number',flag:'import_trackers'},
+    {k:'ao3Rating',label:'AO3 rating',kind:'text',flag:'ao3_fetch'},
+    {k:'kudos',label:'AO3 kudos',kind:'number',flag:'ao3_fetch'}]},
   tv:{label:'TV show',icon:'📺',creator:'Creator',fields:[
     {k:'seasons',label:'Seasons watched',kind:'text'},
     {k:'episodes',label:'Episode progress',kind:'text'},
@@ -340,7 +344,7 @@ const native=window.MarginaliaAndroid;
 /* Each account gets its own local library on this device (plus a Guest one), so switching accounts never
    replaces or mixes them. The Android app still keeps a single library (its storage is native code). */
 const LS_PROFILES='marginalia.profiles.v1',LS_SYNC='marginalia.sync.v1';
-const blankLib=()=>({version:1,entries:[],franchises:[],lists:[],views:[],dismissed:[],deleted:{}});
+const blankLib=()=>({version:1,entries:[],franchises:[],lists:[],views:[],dismissed:[],tagRules:[],deleted:{}});
 const blankRecord=user=>({user:user||'',token:'',last:'',mustChange:false,features:null,isAdmin:false,log:[],count:0,owner:''});
 const dataKey=slot=>slot?LS_DATA+'.u.'+slot:LS_DATA;   // the Guest library keeps the original key
 function bootProfiles(){
@@ -389,6 +393,7 @@ function normalize(d){
   d.lists=(d.lists||[]).map(l=>Object.assign({name:'',notes:'',created:now(),updated:now()},l));
   d.views=(d.views||[]).map(v=>migrateViewFilter(Object.assign({name:'',filter:{},pinned:false,created:now(),updated:now()},v)));
   d.dismissed=Array.isArray(d.dismissed)?d.dismissed:[];
+  d.tagRules=Array.isArray(d.tagRules)?d.tagRules:[];
   d.deleted=d.deleted||{};
   d.version=1;
   return d;
@@ -471,10 +476,10 @@ let authMode='login',authErr='',authBusy=false,pwOpen=false,addingAccount=false;
 const FEATURES={franchises:true,stats:true,wrapped:true,file_link:true,shortcuts:true,drag_drop_import:true,
   version_history:false,offline_app:false,quick_add:false,sync_notices:false,
   covers:false,progress:false,lists:false,stats_plus:false,import_trackers:false,sharing:false,library_actions:false,
-  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false,editions:false,cover_fetch:false};
+  next_up:false,genre_manager:false,saved_views:false,listening_stats:false,duplicates:false,export_all:false,undo:false,editions:false,cover_fetch:false,ao3_fetch:false};
 const FEATURE_LABELS={franchises:'Franchises',stats:'Stats',wrapped:'Year wrapped',file_link:'Linked library file',shortcuts:'Keyboard shortcuts',drag_drop_import:'Drop a file to import',version_history:'Version history',offline_app:'Installable offline app',quick_add:'Quick add',sync_notices:'Sync notices',
   covers:'Covers and links',progress:'Progress buttons',lists:'Lists',stats_plus:'More stats',import_trackers:'Import from other trackers',sharing:'Share links',library_actions:'Library actions',
-  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo',editions:'Editions',cover_fetch:'Find covers automatically'};
+  next_up:'Next up in a series',genre_manager:'Genre manager',saved_views:'Saved views',listening_stats:'Listening stats',duplicates:'Duplicate finder',export_all:'Export everything',undo:'Undo',editions:'Editions',cover_fetch:'Find covers automatically',ao3_fetch:'Fetch stories from AO3'};
 const GATED_ROUTES={franchises:'franchises',franchise:'franchises',stats:'stats',wrapped:'wrapped',lists:'lists',list:'lists'};
 const feat=k=>sync.token&&sync.features&&k in sync.features?!!sync.features[k]:!!FEATURES[k];
 function applyFeatures(f,isAdmin){
@@ -686,7 +691,7 @@ async function restoreVersion(id){
     const t=now(),deleted=Object.assign({},db.deleted);
     keep.forEach(i=>delete deleted[i]);gone.forEach(i=>deleted[i]=t);
     // Restored records get fresh timestamps so every other device accepts them when it syncs.
-    db=normalize({version:1,entries:v.entries.map(e=>Object.assign({},e,{updated:t})),franchises:v.franchises.map(f=>Object.assign({},f,{updated:t})),lists:v.lists.map(l=>Object.assign({},l,{updated:t})),views:v.views.map(w=>Object.assign({},w,{updated:t})),dismissed:v.dismissed,deleted});
+    db=normalize({version:1,entries:v.entries.map(e=>Object.assign({},e,{updated:t})),franchises:v.franchises.map(f=>Object.assign({},f,{updated:t})),lists:v.lists.map(l=>Object.assign({},l,{updated:t})),views:v.views.map(w=>Object.assign({},w,{updated:t})),dismissed:v.dismissed,tagRules:v.tagRules,deleted});
     skipSchedule=true;try{if(!saveLocal())return;}finally{skipSchedule=false;}
     forceSnapshot=true;await syncNow();hist.rows=null;render();toast('Library restored');
     if(feat('version_history'))loadVersions();
@@ -768,7 +773,9 @@ function quickSummary(q){
 }
 const quickBar=()=>feat('quick_add')?`<div class="panel"><label for="quick">Quick add</label><input id="quick" type="text" placeholder="Dune by Frank Herbert, book, finished, 4 stars, #scifi" autocomplete="off" aria-describedby="quickprev"><p id="quickprev" class="muted small" style="margin:.5rem 0 0">${esc(quickSummary(null))}</p></div>`:'';
 function addQuick(){
-  const inp=$('#quick'),q=parseQuick(inp&&inp.value);
+  const inp=$('#quick'),raw=inp&&inp.value||'',aid=ao3On()?ao3IdOf(raw):'';
+  if(aid){const rest=raw.replace(/\s*\bhttps?:\/\/\S+/i,'').replace(/^[\s,]+|[\s,]+$/g,'');if(inp)inp.value='';addQuickAo3(aid,rest);return;}
+  const q=parseQuick(raw);
   if(!q||!q.title){toast('Type a title first');return;}
   const t=now(),dates=[];
   if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});
@@ -777,6 +784,210 @@ function addQuick(){
   if(!saveLocal()){db.entries.pop();return;}
   toast('Added “'+q.title+'”');render();const n=$('#quick');if(n)n.focus();
 }
+
+/* ---------- AO3 lookup and tag reconciliation (flag: ao3_fetch) ---------- */
+/* Paste an AO3 link and the server reads the work's public page. Before anything is added you choose what to keep:
+   each incoming tag can be kept, ignored, or swapped for a tag you already use (GoT -> game of thrones), and those
+   choices are remembered as rules (db.tagRules) so the next story from the same fandom needs less work. */
+const ao3On=()=>feat('ao3_fetch')&&!!sync.token&&!sync.mustChange;
+const ao3IdOf=t=>{const m=/(?:archiveofourown\.(?:org|com|net|gay)|ao3\.org)\/works\/(\d+)/i.exec(String(t||''));return m?m[1]:'';};
+const ao3Placeholder=t=>/^AO3 #\d+$/.test(String(t||''));
+const fandomName=s=>String(s||'').replace(/\s+-\s+[^-()]+$/,'').replace(/\s*\((?:tv|movies?|films?|anime(?: & manga)?|books?|video games?|cartoons?|comics?|\d{4})[^)]*\)\s*$/i,'').trim();
+const tagKey=s=>String(s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').trim();
+const tagWords=k=>k.split(' ').filter(Boolean);
+function lev(a,b){if(a===b)return 0;if(Math.abs(a.length-b.length)>2)return 3;let p=Array.from({length:b.length+1},(_,j)=>j);for(let i=1;i<=a.length;i++){const c=[i];for(let j=1;j<=b.length;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c;}return p[b.length];}
+function tagSuggestions(key,vocab,limit){   // existing tags this one probably means, best first
+  const kw=tagWords(key),flat=key.replace(/ /g,''),out=[];
+  for(const v of vocab){
+    if(v.key===key)continue;
+    const vw=tagWords(v.key),init=vw.map(w=>w[0]).join(''),init2=vw.filter(w=>!['the','of','and','a','an'].includes(w)).map(w=>w[0]).join('');
+    let score=0;
+    if(flat.length>=2&&flat.length<=6&&(flat===init||flat===init2))score=4;
+    else if(kw.length&&vw.length&&(kw.every(w=>vw.includes(w))||vw.every(w=>kw.includes(w)))&&Math.min(key.length,v.key.length)>=3)score=3;
+    else if(flat.length>=4&&(v.key.replace(/ /g,'').startsWith(flat)||flat.startsWith(v.key.replace(/ /g,''))&&v.key.length>=4))score=2;
+    else if(key.length>=4&&lev(key,v.key)<=(key.length>=7?2:1))score=1.5;
+    if(score)out.push({name:v.name,score,n:v.n});
+  }
+  return out.sort((a,b)=>b.score-a.score||b.n-a.n).slice(0,limit||4).map(x=>x.name);
+}
+function tagVocab(withFranchises){
+  const m=new Map();
+  for(const e of db.entries)for(const g of e.genres){const k=tagKey(g);if(!k)continue;const x=m.get(k);if(x)x.n++;else m.set(k,{name:g,key:k,n:1});}
+  if(withFranchises)for(const f of db.franchises){const k=tagKey(f.name);if(k&&!m.has(k))m.set(k,{name:f.name,key:k,n:0});}
+  return [...m.values()].sort((a,b)=>b.n-a.n||a.name.localeCompare(b.name));
+}
+/* rules: "timestamp|from-key|kind|value", kind map | ignore | none (a removed rule). The newest per key wins, which is also how devices merge them. */
+function collapseRules(list){const m=new Map();for(const r of list||[]){const p=String(r).split('|');if(p.length<4||!p[1])continue;const c=m.get(p[1]);if(!c||p[0]>=c.ts)m.set(p[1],{ts:p[0],str:String(r)});}return [...m.values()].map(x=>x.str).sort().slice(-2000);}
+function ruleMap(){const out=new Map();for(const r of collapseRules(db.tagRules)){const p=r.split('|');if(p[2]==='none')continue;out.set(p[1],{kind:p[2],val:p.slice(3).join('|')});}return out;}
+function setRule(key,kind,val){db.tagRules=collapseRules([...(db.tagRules||[]),now()+'|'+key+'|'+kind+'|'+String(val||'').replace(/\|/g,'/').slice(0,120)]);}
+async function fetchAo3(id){
+  const r=await api('GET','/api/ao3?id='+encodeURIComponent(id));
+  if(r.status===401){signedOut('Session expired. Sign in again.');throw Error('Signed out');}
+  if(r.status!==200)throw Error(r.body.error||'AO3 lookup failed ('+r.status+')');
+  return r.body;
+}
+const AO3_GROUPS=[['fandoms','Fandom',true],['relationships','Relationships',true],['tags','Additional tags',true],['characters','Characters',false],['warnings','Warnings',false],['categories','Categories',false]];
+/* Resolves one incoming tag against your rules and your existing tags. */
+function ao3Rows(w,auto){
+  const rules=ruleMap(),vocab=tagVocab(false),vocabF=tagVocab(true),rows=[];
+  for(const [g,label,def] of AO3_GROUPS){
+    for(const tag of w[g]||[]){
+      const name=g==='fandoms'?fandomName(tag):tag,key=tagKey(name);if(!key)continue;
+      const V=g==='fandoms'?vocabF:vocab,have=V.find(v=>v.key===key),rule=rules.get(key);
+      const row={g,tag,name:name.toLowerCase(),display:name,key,include:def,choice:'',state:'new',sugg:[],rem:false,hadRule:!!rule};
+      if(rule&&rule.kind==='ignore'){row.include=false;row.choice='__ignore';row.state='rule';}
+      else if(rule&&rule.kind==='map'){row.choice='tag:'+rule.val;row.state='rule';}
+      else if(have){row.choice='tag:'+have.name;row.state='have';}
+      else row.sugg=tagSuggestions(key,V,3);
+      if(auto&&row.state==='new')row.include=false;   // bulk runs only use tags that are already known
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+function ao3Selection(rows){
+  const tags=[];let franchiseName='';
+  for(const r of rows){
+    if(!r.include||r.choice==='__ignore')continue;
+    const val=r.choice.startsWith('tag:')?r.choice.slice(4):r.name;
+    if(r.g==='fandoms'&&!franchiseName){const f=db.franchises.find(x=>tagKey(x.name)===tagKey(val));franchiseName=f?f.name:tagKey(val)===r.key?r.display:val;continue;}
+    if(!tags.some(t=>tagKey(t)===tagKey(val)))tags.push(val.toLowerCase());
+  }
+  return {tags,franchiseName};
+}
+function saveAo3Rules(rows){
+  for(const r of rows){
+    const own=r.choice===''||(r.choice.startsWith('tag:')&&tagKey(r.choice.slice(4))===r.key);
+    if(r.choice==='__ignore'){if(r.rem||r.hadRule)setRule(r.key,'ignore','');}
+    else if(!own){if(r.rem||r.hadRule)setRule(r.key,'map',r.choice.slice(4));}
+    else if(r.hadRule&&r.state!=='rule')setRule(r.key,'none','');
+  }
+}
+let ao3dlg=null;
+function reviewAo3(w){   // resolves to {tags,franchiseName} or null when cancelled
+  return new Promise(resolve=>{
+    const rows=ao3Rows(w,false),vocab=tagVocab(false),vocabF=tagVocab(true);
+    let el=document.getElementById('ao3dlg');if(!el){el=document.createElement('div');el.id='ao3dlg';el.style.cssText='position:fixed;inset:0;background:rgba(10,5,15,.8);overflow:auto;z-index:70;padding:1rem';document.body.appendChild(el);}
+    el.hidden=false;ao3dlg=el;
+    const paint=()=>{
+      const sc=el.scrollTop,sel=ao3Selection(rows);
+      const optsFor=(r,V)=>{
+        const own=V.find(v=>v.key===r.key);
+        return `<option value="">${own?'Use “'+esc(own.name)+'”':'Add as a new tag “'+esc(r.name)+'”'}</option><option value="__ignore"${r.choice==='__ignore'?' selected':''}>Ignore this tag</option>`
+          +(r.sugg.length?`<optgroup label="Did you mean…">${r.sugg.map(n=>`<option value="tag:${esc(n)}"${r.choice==='tag:'+n?' selected':''}>${esc(n)}</option>`).join('')}</optgroup>`:'')
+          +`<optgroup label="Your tags">${V.map(v=>`<option value="tag:${esc(v.name)}"${r.choice==='tag:'+v.name?' selected':''}>${esc(v.name)}${v.n?' ('+v.n+')':''}</option>`).join('')}</optgroup>`;
+      };
+      const rowHTML=(r,i)=>{
+        const V=r.g==='fandoms'?vocabF:vocab,mapped=r.choice.startsWith('tag:')&&tagKey(r.choice.slice(4))!==r.key,ign=r.choice==='__ignore';
+        const note=r.state==='rule'?`<span class="muted small">remembered${ign?': ignored':' → '+esc(r.choice.slice(4))}</span>`:r.state==='have'?'<span class="muted small">you already use this</span>':r.sugg.length&&!mapped&&!ign?`<span class="muted small">new — looks like ${r.sugg.map(n=>`<button type="button" class="chip genre" data-ao3="use" data-i="${i}" data-v="${esc(n)}">${esc(n)}</button>`).join(' ')}</span>`:'<span class="muted small">new tag</span>';
+        const sel_=r.choice===''&&r.state==='new'?'':'';
+        return `<div class="facet" style="align-items:center;gap:.5rem;flex-wrap:wrap"><label style="display:flex;gap:.4rem;align-items:center;min-width:12rem"><input type="checkbox" data-ao3="inc" data-i="${i}" ${r.include&&!ign?'checked':''} ${ign?'disabled':''}> <span>${esc(r.display)}</span></label>${note}
+          <select data-ao3="choice" data-i="${i}" aria-label="What to do with ${esc(r.display)}" style="max-width:15rem">${optsFor(r,V).replace('<option value="">',`<option value=""${r.choice===''?' selected':''}>`)}</select>
+          ${(mapped||ign)?`<label class="small" style="display:flex;gap:.3rem;align-items:center"><input type="checkbox" data-ao3="rem" data-i="${i}" ${r.rem||r.hadRule?'checked':''}> remember</label>`:''}</div>`;
+      };
+      const meta=[w.rating&&'Rated '+w.rating,w.words!=null&&w.words.toLocaleString()+' words',w.chapters!=null&&w.chapters+(w.chaptersTotal?'/'+w.chaptersTotal:'')+' chapters',w.kudos!=null&&w.kudos.toLocaleString()+' kudos'].filter(Boolean).join(' · ');
+      el.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="Review AO3 story">
+        <div class="modal-head"><h2>From AO3</h2><button type="button" class="btn ghost" data-ao3="cancel">Cancel ✕</button></div>
+        <p><b>${esc(w.title)}</b> by ${esc(w.author)}</p><p class="muted small">${esc(meta)}</p>
+        ${w.summary?`<details><summary>Summary</summary><p style="white-space:pre-wrap">${esc(w.summary)}</p></details>`:''}
+        <p class="muted">Choose what to keep. Untick a tag to drop it, or pick one of your own tags from the list to use instead. Tick <i>remember</i> to apply that choice automatically next time.</p>
+        ${AO3_GROUPS.map(([g,label])=>{const idx=rows.map((r,i)=>[r,i]).filter(([r])=>r.g===g);if(!idx.length)return '';
+          return `<fieldset><legend>${label} <button type="button" class="btn small" data-ao3="grp" data-g="${g}" data-v="1">all</button> <button type="button" class="btn small" data-ao3="grp" data-g="${g}" data-v="0">none</button></legend>${idx.map(([r,i])=>rowHTML(r,i)).join('')}</fieldset>`;}).join('')}
+        <p class="muted small" role="status">${sel.franchiseName?'Franchise: <b>'+esc(sel.franchiseName)+'</b>. ':''}${sel.tags.length?'Tags: '+esc(sel.tags.join(', ')):'No tags selected.'}</p>
+        <div class="chips"><button type="button" class="btn primary" data-ao3="apply">Use these</button><button type="button" class="btn" data-ao3="cancel">Cancel</button></div></div>`;
+      el.scrollTop=sc;
+    };
+    const done=v=>{el.removeEventListener('click',onClick);el.removeEventListener('change',onChange);el.hidden=true;el.innerHTML='';ao3dlg=null;resolve(v);};
+    const onClick=ev=>{
+      const b=ev.target.closest('[data-ao3]');if(!b||b.tagName==='INPUT'||b.tagName==='SELECT')return;
+      const a=b.dataset.ao3,i=Number(b.dataset.i);
+      if(a==='cancel')done(null);
+      else if(a==='apply'){saveAo3Rules(rows);const s=ao3Selection(rows);if(rows.some(r=>r.hadRule||r.rem))changed();done(s);}
+      else if(a==='use'){rows[i].choice='tag:'+b.dataset.v;rows[i].include=true;rows[i].rem=true;paint();}
+      else if(a==='grp'){rows.forEach(r=>{if(r.g===b.dataset.g&&r.choice!=='__ignore')r.include=b.dataset.v==='1';});paint();}
+    };
+    const onChange=ev=>{
+      const t=ev.target,a=t.dataset&&t.dataset.ao3;if(!a)return;const i=Number(t.dataset.i),r=rows[i];
+      if(a==='inc')r.include=t.checked;
+      else if(a==='choice'){r.choice=t.value;if(t.value==='__ignore'){r.include=false;r.rem=true;}else{r.include=true;r.rem=t.value!==''&&!(t.value.startsWith('tag:')&&tagKey(t.value.slice(4))===r.key);}}
+      else if(a==='rem')r.rem=t.checked;
+      paint();
+    };
+    el.addEventListener('click',onClick);el.addEventListener('change',onChange);paint();
+  });
+}
+/* Fields taken from the AO3 page, ready to merge into a draft or an entry. */
+function ao3Fields(w){
+  const d={format:'Fanfic'};
+  if(w.words!=null)d.words=w.words;if(w.chapters!=null)d.chapters=w.chapters;if(w.rating)d.ao3Rating=w.rating;if(w.kudos!=null)d.kudos=w.kudos;
+  return d;
+}
+const withSummary=(notes,summary)=>{notes=String(notes||'');if(!summary)return notes;const head='Summary: '+summary;return notes.includes(summary.slice(0,60))?notes:head+(notes?'\n\n'+notes:'');};
+async function ao3FillEditor(){
+  if(!ed)return;syncDraft();
+  const id=ao3IdOf($('#ao3link')&&$('#ao3link').value)||ao3IdOf(ed.url);
+  if(!id){toast('Paste an AO3 link first (archiveofourown.org/works/…)');return;}
+  toast('Fetching from AO3…');
+  let w;try{w=await fetchAo3(id);}catch(e){toast(e.message);return;}
+  toast('');const sel=await reviewAo3(w);if(!sel||!ed)return;
+  syncDraft();ed.type='book';ed.title=w.title;ed.creator=w.author;ed.url=w.url;
+  if(sel.franchiseName)ed.franchise=sel.franchiseName;
+  ed.genres=[...new Set([...ed.genres.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean),...sel.tags])].join(', ');
+  ed.details=Object.assign({},ed.details,ao3Fields(w));ed.notes=withSummary(ed.notes,w.summary);
+  paintEditor();toast('Filled in from AO3. Check it, then save.');
+}
+async function addQuickAo3(id,rest){
+  let w;try{w=await fetchAo3(id);}catch(e){toast(e.message);return;}
+  const sel=await reviewAo3(w);if(!sel)return;
+  const q=parseQuick('x'+(rest?', '+rest:''))||{title:'',creator:'',type:'book',status:'planned',stars:null,genres:[],franchise:'',list:'',date:'',notes:[]},t=now(),dates=[];
+  if(q.status==='finished')dates.push({start:'',end:q.date||today(),note:''});else if(q.status==='ongoing')dates.push({start:q.date||today(),end:'',note:''});
+  const fr=sel.franchiseName||q.franchise;
+  const rec={id:'ao3-'+id,type:'book',title:w.title,creator:w.author,franchiseId:fr?ensureFranchise(fr):'',genres:[...new Set([...q.genres,...sel.tags])],status:q.status,stars:q.stars,feeling:'',mix:'',dates,details:ao3Fields(w),notes:withSummary(q.notes.join('\n'),w.summary),links:[],cover:'',url:w.url,listIds:q.list&&feat('lists')?[ensureList(q.list)]:[],workId:'',created:t,updated:t};
+  const i=db.entries.findIndex(e=>e.id===rec.id);
+  if(i>=0){if(!confirm('You already have this story. Update it from AO3?'))return;const prev=db.entries[i];rec.stars=q.stars!=null?q.stars:prev.stars;rec.status=prev.status;rec.dates=prev.dates;rec.listIds=prev.listIds;rec.created=prev.created;rec.cover=prev.cover;rec.notes=withSummary(prev.notes,w.summary);rec.genres=[...new Set([...prev.genres,...sel.tags])];db.entries[i]=Object.assign({},prev,rec);}
+  else db.entries.push(rec);
+  if(!saveLocal())return;
+  toast('Added “'+w.title+'”');render();
+}
+let ao3Busy=false;
+async function bulkAo3(){   // fills in the selected stories that have an AO3 link, using only tags you already know
+  if(ao3Busy)return;
+  const all=pickedEntries().filter(e=>ao3IdOf(e.url)),LIMIT=100,todo=all.slice(0,LIMIT);
+  if(!all.length){toast('None of the selected entries has an AO3 link');return;}
+  ao3Busy=true;const snap=undoSnap();let ok=0,skippedTags=0,err='';
+  try{
+    for(let n=0;n<todo.length;n++){
+      toast('Fetching from AO3… '+(n+1)+' of '+todo.length);
+      const e=todo[n];let w;
+      try{w=await fetchAo3(ao3IdOf(e.url));}catch(x){err=x.message;if(/slow down|limited|Signed out/i.test(x.message))break;continue;}
+      const rows=ao3Rows(w,true);skippedTags+=rows.filter(r=>r.g!=='characters'&&r.g!=='warnings'&&r.g!=='categories'&&r.state==='new').length;
+      const sel=ao3Selection(rows);
+      if(!e.title||ao3Placeholder(e.title))e.title=w.title;
+      if(!e.creator)e.creator=w.author;
+      if(!e.franchiseId&&sel.franchiseName)e.franchiseId=ensureFranchise(sel.franchiseName);
+      e.genres=[...new Set([...e.genres,...sel.tags])];
+      e.details=Object.assign({},ao3Fields(w),e.details);e.details.format=e.details.format||'Fanfic';
+      e.notes=withSummary(e.notes,w.summary);e.updated=now();ok++;
+    }
+  }finally{ao3Busy=false;}
+  if(ok)changed();
+  const msg='Filled in '+plural(ok,'story')+(all.length>LIMIT?' (first '+LIMIT+' of '+all.length+'; run it again for the rest)':'')+(skippedTags?'. '+plural(skippedTags,'new tag')+' left out. Fetch a story from the editor to review new tags':'')+(err?'. Stopped: '+err:'');
+  if(ok)offerUndo(msg,snap);else toast(msg||err);
+}
+const ao3EditorBox=()=>ao3On()?`<fieldset><legend>Fetch from AO3</legend><div class="row2" style="margin-bottom:0"><label>AO3 link<input id="ao3link" type="text" inputmode="url" autocapitalize="none" spellcheck="false" value="${esc(ao3IdOf(ed.url)?ed.url:'')}" placeholder="https://archiveofourown.org/works/…"></label><div style="align-self:end"><button type="button" class="btn" data-ao3="editor-fetch">Fetch details</button></div></div><p class="muted small" style="margin:.3rem 0 0">Fills in the title, author, word count, rating, fandom, tags and summary. You choose which tags to keep before anything changes.</p></fieldset>`:'';
+function tagRulesPanel(){
+  if(!feat('ao3_fetch'))return '';
+  const rules=[...ruleMap().entries()];
+  return `<div class="panel"><h2>Tag rules</h2><p class="muted" style="margin-top:0">Choices you remembered when fetching from AO3. A rule swaps an incoming tag for one of yours, or ignores it, automatically.</p>
+  ${rules.length?`<ul class="runs">${rules.map(([k,r])=>`<li><b>${esc(k)}</b> ${r.kind==='ignore'?'is ignored':'→ '+esc(r.val)} <button type="button" class="btn small" data-ao3="rule-del" data-k="${esc(k)}">Remove</button></li>`).join('')}</ul>`:'<p class="muted">No rules yet.</p>'}</div>`;
+}
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-ao3]');if(!b||b.closest('#ao3dlg'))return;
+  const a=b.dataset.ao3;
+  if(a==='editor-fetch')ao3FillEditor();
+  else if(a==='bulk')bulkAo3();
+  else if(a==='rule-del'){setRule(b.dataset.k,'none','');changed();}
+});
 
 /* ---------- admin (server-enforced: only accounts marked admin) ---------- */
 let adm={data:null,loading:false,err:'',note:''};
@@ -1079,6 +1290,49 @@ function importAudible(rows){
   if(returned)out.skipped.push(returned+' returned unfinished book'+(returned===1?'':'s'));
   return out;
 }
+/* The "media app" export: one row per work (AO3, fanfiction.net, ISBN), with read-through dates and notes in parallel "|" lists. */
+function importMediaApp(rows){
+  const out=[],lists=new Map(),frs=new Map(),skipped=[];
+  const listFor=name=>{const id='mapp-list-'+hash32(name.toLowerCase());if(!lists.has(id))lists.set(id,{id,name,notes:'',created:now(),updated:IMPORT_STAMP});return id;};
+  const when=v=>{   // "2024", "2024-12" and "2024-12-31" -> a full date plus a note saying how exact it was
+    const m=/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/.exec(String(v||'').trim());if(!m)return {end:'',note:''};
+    return {end:m[1]+'-'+(m[2]||'01').padStart(2,'0')+'-'+(m[3]||'01').padStart(2,'0'),note:m[3]?'':m[2]?'month only':'year only'};
+  };
+  for(const r of rows){
+    const title=String(r.title||'').trim();if(!title)continue;
+    const status={'finished':'finished','in progress':'ongoing','want to read':'planned'}[String(r.status||'').toLowerCase()]||'finished';
+    const lines=String(r.notes||'').split(/\r?\n/);
+    const link=lines.find(l=>/^https?:\/\//i.test(l.trim()))||'';
+    const ao3=/archiveofourown\.org\/works\/(\d+)/i.exec(link),ffn=/fanfiction\.net\/s\/(\d+)/i.exec(link),isbn=String(r.isbn||'').replace(/\D/g,'');
+    const id=ao3?'ao3-'+ao3[1]:ffn?'ffn-'+ffn[1]:isbn?'isbn-'+isbn:'mapp-'+hash32(title);
+    const shelves=lines.filter(l=>/^Shelves:/i.test(l)).flatMap(l=>l.replace(/^Shelves:/i,'').split(',')).map(x=>x.trim()).filter(x=>x&&!/^currently reading$/i.test(x));
+    const notes=lines.filter(l=>l.trim()&&!/^https?:\/\//i.test(l.trim())&&!/^Shelves:/i.test(l)).join('\n').trim();
+    const details={},fmt=String(r.format||'').trim();
+    if(fmt)details.format=/^web ?comic$/i.test(fmt)?'Comic / manga':/^web ?novel$/i.test(fmt)?'Web novel':/^fan ?fic/i.test(fmt)?'Fanfic':['Paper','E-book','Audiobook'].find(f=>f.toLowerCase()===fmt.toLowerCase())||'';
+    if(!details.format)delete details.format;
+    if(Number(r.current_page)>0)details.currentPage=Number(r.current_page);
+    if(Number(r.pages)>0)details.pages=Number(r.pages);
+    const ds=String(r.run_finished_dates||'').split('|'),ns=String(r.run_notes||'').split('|'),dates=[];
+    for(let i=0;i<Math.max(ds.length,ns.length);i++){
+      let note=String(ns[i]||'').trim();
+      for(const [rx,k] of [[/(\d+)\s*words?\b/i,'words'],[/(\d+)\s*chapters?\b/i,'chapters'],[/(\d+)\s*pages?\b/i,'pages']]){
+        const m=rx.exec(note);if(m){if(Number(m[1])>0&&!details[k]&&(k!=='pages'||status==='finished'))details[k]=Number(m[1]);note=note.replace(m[0],'').replace(/^[\s;,]+|[\s;,]+$/g,'');}
+      }
+      note=note.replace(/^Readthrough \d+[;\s]*$/i,'').replace(/^(Readthrough \d+;)\s+/i,'$1 ').trim();
+      const w=when(ds[i]);
+      if(w.end||note)dates.push({start:'',end:w.end,note:[note,w.note].filter(Boolean).join(' · ')});
+    }
+    let franchiseId='';
+    if(r.franchise){const fid='mapp-fr-'+hash32(r.franchise.toLowerCase());if(!frs.has(fid))frs.set(fid,{id:fid,name:r.franchise,notes:'',timelines:[],created:now(),updated:IMPORT_STAMP});franchiseId=fid;}
+    const listIds=[...new Set([...(String(r.favorite).toLowerCase()==='true'?[listFor('Favourites')]:[]),...shelves.map(listFor)])];
+    const stars=halfStar(r.stars),lastEnd=dates.map(d=>d.end).filter(Boolean).sort().pop();
+    const e=importEntry({id,type:'book',title,creator:r.author||'',franchiseId,status,stars,genres:String(r.genres||'').split(/[,;]/),dates,details,notes,
+      url:ao3||ffn?link.trim():isbn?'https://openlibrary.org/isbn/'+isbn:'',created:lastEnd?lastEnd+'T12:00:00.000Z':undefined});
+    if(FEELINGS.some(f=>f.k===String(r.feeling||'').toLowerCase()))e.feeling=String(r.feeling).toLowerCase();
+    e.listIds=listIds;out.push(e);
+  }
+  return {kind:'Media app (AO3 and more)',entries:out,franchises:[...frs.values()],lists:[...lists.values()],skipped};
+}
 function importRows(rows,fileName){
   const H=new Set(Object.keys(rows[0]||{}).map(h=>h.toLowerCase())),out=[];
   if(!rows.length)return {kind:'empty',entries:[]};
@@ -1112,6 +1366,7 @@ function importRows(rows,fileName){
     }
     return {kind:'Letterboxd',entries:[...acc.values()]};
   }
+  if(H.has('source_uuid')&&H.has('run_finished_dates')){return importMediaApp(rows);}
   if(H.has('title')){
     const types=Object.assign({},Q_TYPES);TYPE_KEYS.forEach(k=>{types[k]=k;types[TYPES[k].label.toLowerCase()]=k;});
     const stat=Object.assign({},Q_STATUS);STATUSES.forEach(s=>{stat[s[0]]=s[0];stat[s[1].toLowerCase()]=s[0];});
@@ -1131,14 +1386,14 @@ function jsonRows(text){
   return j.map(o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,v==null?'':typeof v==='object'?JSON.stringify(v):String(v)])));
 }
 function buildImport(files){
-  const byId=new Map(),kinds=new Set(),franchises=new Map(),skipped=[];
+  const byId=new Map(),kinds=new Set(),franchises=new Map(),lists=new Map(),skipped=[];
   for(const f of files){
     const r=importRows(/\.json$/i.test(f.name)?jsonRows(f.text):parseCSV(f.text),f.name);
     if(r.entries.length)kinds.add(r.kind);
-    (r.franchises||[]).forEach(x=>franchises.set(x.id,x));(r.skipped||[]).forEach(x=>skipped.push(x));
+    (r.franchises||[]).forEach(x=>franchises.set(x.id,x));(r.lists||[]).forEach(x=>lists.set(x.id,x));(r.skipped||[]).forEach(x=>skipped.push(x));
     for(const e of r.entries){const ex=byId.get(e.id);if(!ex)byId.set(e.id,e);else{if(ex.stars==null)ex.stars=e.stars;for(const d of e.dates)if(!ex.dates.some(x=>x.end===d.end&&x.start===d.start))ex.dates.push(d);if(e.status==='finished')ex.status='finished';}}
   }
-  return {lib:{version:1,entries:[...byId.values()],franchises:[...franchises.values()],lists:[],deleted:{}},kinds:[...kinds],skipped};
+  return {lib:{version:1,entries:[...byId.values()],franchises:[...franchises.values()],lists:[...lists.values()],deleted:{}},kinds:[...kinds],skipped};
 }
 document.addEventListener('change',async ev=>{
   if(ev.target.id!=='trackerfile')return;
@@ -1156,7 +1411,7 @@ document.addEventListener('change',async ev=>{
 });
 function importPanel(){
   if(!feat('import_trackers'))return '';
-  return `<div class="panel"><h2>Import from another tracker</h2><p>Bring in a Goodreads, StoryGraph, Letterboxd or Audible export, or any CSV with a Title column. You review everything before it is added, and importing the same file twice never duplicates entries. Anything you have already edited wins.</p>
+  return `<div class="panel"><h2>Import from another tracker</h2><p>Bring in a Goodreads, StoryGraph, Letterboxd, Audible or AO3 (media app) export, or any CSV with a Title column. You review everything before it is added, and importing the same file twice never duplicates entries. Anything you have already edited wins.</p>
   <label>Choose file(s)<input type="file" id="trackerfile" accept=".csv,.json,text/csv,application/json" multiple></label>
   <p class="muted small">Audible: export your library with Libation (JSON or CSV) and choose that file. Sleep and podcast episodes and returned, unfinished books are skipped. Goodreads: My Books → Import and export → Export library. Letterboxd: Settings → Data → Export, then pick <code>ratings.csv</code>, <code>diary.csv</code>, <code>watched.csv</code> and <code>watchlist.csv</code> together. For a plain CSV the columns title, type, creator, status, rating, finished, genres and notes are understood.</p></div>`;
 }
@@ -1219,7 +1474,8 @@ function viewShared(token){
   ${tl?`<h2>Timelines</h2>${tl}`:''}`;
 }
 /* ---------- library actions (flag: library_actions) ---------- */
-let picked=new Set(),previewId=null,libShown=[];const genreOpen=new Set();
+let picked=new Set(),previewId=null,libShown=[],libLimit=600,libSig='';   // big libraries draw the first 600 cards, then more on request
+const genreOpen=new Set();
 const LA=()=>feat('library_actions');
 function removeEntries(ids){
   const t=now();
@@ -1275,7 +1531,7 @@ function bulkBar(){
     <select data-change="bulk-status" aria-label="Set status for the selected"><option value="">Set status…</option>${STATUSES.map(s=>`<option value="${s[0]}">${esc(s[1])}</option>`).join('')}</select>
     ${feat('lists')?`<select data-change="bulk-list" aria-label="Add the selected to a list"><option value="">Add to list…</option>${[...db.lists].sort(byName).map(l=>opt(l.id,l.name,'')).join('')}<option value="__new">＋ New list…</option></select>`:''}
     <button type="button" class="btn small" data-act="bulk-genre" data-v="add">＋ Genre</button><button type="button" class="btn small" data-act="bulk-genre" data-v="remove">− Genre</button>
-    ${editionsOn()?'<button type="button" class="btn small" data-act="bulk-link" title="Count the selected books as one book with several editions">Link as editions</button>':''}${coverFetchOn()?'<button type="button" class="btn small" data-act="bulk-covers" title="Look up covers online for the selected books that have none">Find covers</button>':''}<button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
+    ${editionsOn()?'<button type="button" class="btn small" data-act="bulk-link" title="Count the selected books as one book with several editions">Link as editions</button>':''}${ao3On()?'<button type="button" class="btn small" data-ao3="bulk" title="Fill in the selected AO3 stories (title, author, words, fandom, summary) from their links">Fetch from AO3</button>':''}${coverFetchOn()?'<button type="button" class="btn small" data-act="bulk-covers" title="Look up covers online for the selected books that have none">Find covers</button>':''}<button type="button" class="btn small danger" data-act="bulk-delete">Delete…</button></div>`;
 }
 const updateBulkBar=()=>{const w=$('#bulkwrap');if(w)w.innerHTML=bulkBar();};
 const pickedEntries=()=>[...picked].map(byId).filter(Boolean);
@@ -1881,6 +2137,7 @@ function filteredWith(F){   // F here is the filter being applied (the parameter
 function viewLibrary(){
   if(!db.entries.length)return emptyState();
   const list=workReps(filtered());libShown=list.map(e=>e.id);
+  const sig=JSON.stringify(F);if(sig!==libSig){libSig=sig;libLimit=600;}
   const frs=[...db.franchises].sort(byName);
   const genres=[...new Set(db.entries.flatMap(e=>e.genres))].sort();
   const years=allYears();
@@ -1908,7 +2165,7 @@ function viewLibrary(){
     <label>Sort by<select data-change="filter" data-k="sort">${opt('recent','Most recent activity',F.sort)}${opt('added','Date added',F.sort)}${opt('title','Title A–Z',F.sort)}${opt('rating','Stars (high first)',F.sort)}</select></label>
   </div>
   </details><p>${list.length} of ${editionsOn()?workTotal():db.entries.length} shown</p><div class="chips">${chips.join('')}<button class="btn small" data-act="clear-filters">Clear all</button></div></div>
-  ${list.length?`<div class="grid">${list.map(libCard).join('')}</div><div id="bulkwrap">${bulkBar()}</div>`:'<div class="panel empty">Nothing matches those filters.</div>'}`;
+  ${list.length?`<div class="grid">${list.slice(0,libLimit).map(libCard).join('')}</div>${list.length>libLimit?`<p style="text-align:center"><button type="button" class="btn" data-act="lib-more">Show ${Math.min(500,list.length-libLimit)} more (${list.length-libLimit} not shown yet)</button></p>`:''}<div id="bulkwrap">${bulkBar()}</div>`:'<div class="panel empty">Nothing matches those filters.</div>'}`;
 }
 function viewEntry(id){
   const e=byId(id);
@@ -2104,6 +2361,7 @@ function viewSettings(){
   ${native||!feat('drag_drop_import')?'':'<p class="muted small">You can also drop a backup .json file anywhere on this page to import it.</p>'}</div>
   ${exportPanel()}
   ${importPanel()}
+  ${tagRulesPanel()}
   <div class="panel"><h2>Look &amp; readability</h2>
     <div class="row2">
       <label>Theme<select data-change="set" data-k="theme">${opt('auto','Match my device',settings.theme)}${opt('light','Light (parchment)',settings.theme)}${opt('dark','Dark (candlelit)',settings.theme)}</select></label>
@@ -2151,6 +2409,7 @@ function editorHTML(){
   <form id="editor" autocomplete="off">
     <div class="modal-head"><h2>${d.id?'Edit entry':'Log something'}</h2><button type="button" class="btn ghost" data-act="ed-close">Close ✕</button></div>
     <fieldset><legend>What is it?</legend><div class="chips">${TYPE_KEYS.map(k=>`<button type="button" class="chip${d.type===k?' sel':''}" aria-pressed="${d.type===k}" data-act="ed-type" data-v="${k}">${TYPES[k].icon} ${TYPES[k].label}</button>`).join('')}</div></fieldset>
+    ${d.type==='book'?ao3EditorBox():''}
     <div class="row2">
       <label>Title<input name="title" type="text" value="${esc(d.title)}" required></label>
       <label>${esc(T.creator)}<input name="creator" type="text" value="${esc(d.creator)}"></label>
@@ -2257,7 +2516,7 @@ function parseLibrary(text){
   };
   const cleanFilter=f=>{const o=defaults();if(!obj(f))return o;for(const k of ['q','sort','mode','min','max','from','to'])if(str(f[k]))o[k]=f[k];for(const side of ['include','exclude'])if(obj(f[side]))for(const [k,v] of Object.entries(f[side]))if(/^[a-z]+$/.test(k)&&Array.isArray(v)&&v.every(str))o[side][k]=v;return o;};
   const nm=r=>'“'+(obj(r)&&str(r.title||r.name)?String(r.title||r.name).slice(0,40):'?')+'”';
-  const out={version:1,entries:[],franchises:[],lists:[],views:[],dismissed:[],deleted:{}};
+  const out={version:1,entries:[],franchises:[],lists:[],views:[],dismissed:[],tagRules:[],deleted:{}};
   for(const e of data.entries){
     if(!take(e,'Entry',nm))continue;
     if(!TYPE_KEYS.includes(e.type)){skipped.push('Entry '+nm(e)+' (unknown type '+JSON.stringify(String(e.type).slice(0,20))+')');seen.delete(e.id);continue;}
@@ -2295,6 +2554,7 @@ function parseLibrary(text){
   }
   if(obj(data.deleted))for(const [k,v] of Object.entries(data.deleted))if(id(k)&&stamp(v))out.deleted[k]=new Date(v).toISOString();
   if(Array.isArray(data.dismissed))out.dismissed=data.dismissed.filter(x=>str(x)&&x.length<=1000).slice(0,1000);
+  if(Array.isArray(data.tagRules))out.tagRules=data.tagRules.filter(x=>str(x)&&x.length<=300).slice(0,2000);
   importSkipped=skipped;
   return normalize(out);
 }
@@ -2312,7 +2572,7 @@ function preview(text){
       const lists=source.lists.filter(l=>selected.has(l.id)||entries.some(e=>(e.listIds||[]).includes(l.id)&&!listById(l.id)));
       const views=source.views.filter(v=>selected.has(v.id));
       const deleted=Object.fromEntries(Object.entries(source.deleted).filter(([k])=>selected.has('del:'+k)));
-      result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,lists,views,dismissed:source.dismissed,deleted})));
+      result=mergeData(JSON.parse(JSON.stringify(db)),JSON.parse(JSON.stringify({entries,franchises,lists,views,dismissed:source.dismissed,tagRules:source.tagRules,deleted})));
       const before=new Map([...db.entries,...db.franchises,...db.lists,...db.views].map(r=>[r.id,canon(r)]));
       const after=[...result.entries,...result.franchises,...result.lists,...result.views];const added=after.filter(r=>!before.has(r.id)).length;
       const unchanged=after.filter(r=>before.get(r.id)===canon(r)).length;
@@ -2352,6 +2612,7 @@ function mergeData(a,b){
   out.lists=lkeep;
   out.views=pick(a.views||[],b.views||[]);
   out.dismissed=[...new Set([...(a.dismissed||[]),...(b.dismissed||[])])].slice(-500);
+  out.tagRules=collapseRules([...(a.tagRules||[]),...(b.tagRules||[])]);
   out.franchises=keep;out.deleted=del;
   const lids=new Set(lkeep.map(l=>l.id));
   out.entries.forEach(e=>{const next=[...new Set((e.listIds||[]).map(i=>lremap[i]||i).filter(i=>lids.has(i)))];if(next.join()!==(e.listIds||[]).join()){e.listIds=next;e.updated=now();}});
@@ -2476,6 +2737,7 @@ document.addEventListener('click',ev=>{
     case 'qstar':setStars(el.dataset.id,el.dataset.v);break;
     case 'chip-filter':{const k=el.dataset.k,cur=F.include[k]||[];F.include[k]=cur.includes(v)?cur.filter(x=>x!==v):[...cur,v];F.exclude[k]=(F.exclude[k]||[]).filter(x=>x!==v);if(route().p!=='library')location.hash='#/library';render();break;}
     case 'more-genres':if(genreOpen.has(el.dataset.id))genreOpen.delete(el.dataset.id);else genreOpen.add(el.dataset.id);render();break;
+    case 'lib-more':libLimit+=500;render();break;
     case 'sel-all':libShown.forEach(id=>picked.add(id));render();break;
     case 'sel-none':picked.clear();render();break;
     case 'bulk-genre':bulkGenre(v);break;

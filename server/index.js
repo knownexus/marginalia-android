@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
+const { parseWork } = require('./ao3');
 const { SCHEMA: FEATURE_SCHEMA, FLAG_DEFAULTS, validFlag, resolveFlags, featureOn } = require('./features');
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -369,6 +370,38 @@ async function findCover(title, creator, asin) {
   return null;
 }
 
+/* ---------- AO3 lookup (flag: ao3_fetch) ---------- */
+// The page cannot read archiveofourown.org itself, so the server fetches the public work page and returns its details.
+// Requests are spaced out and capped per account so this stays a polite, small-scale reader.
+const AO3_BASE = process.env.AO3_BASE_TEST || 'https://archiveofourown.org';
+const AO3_PER_HOUR = 300, AO3_GAP_MS = process.env.AO3_BASE_TEST ? 0 : 1500;
+const ao3Use = new Map();
+let ao3Chain = Promise.resolve();
+function ao3Quota(userId) {
+  const t = Date.now(); let a = ao3Use.get(userId);
+  if (!a || a.reset < t) { a = { n: 0, reset: t + 3600_000 }; ao3Use.set(userId, a); }
+  if (++a.n > AO3_PER_HOUR) throw new HttpError(429, 'AO3 lookups are limited to ' + AO3_PER_HOUR + ' an hour. Try again later.');
+}
+function ao3Slot() {   // one request at a time, with a gap between them
+  const run = ao3Chain.then(() => null), done = run.then(() => new Promise(r => setTimeout(r, AO3_GAP_MS)));
+  ao3Chain = done; return run;
+}
+async function fetchWork(id) {
+  await ao3Slot();
+  let r;
+  try {
+    r = await fetch(AO3_BASE + '/works/' + id + '?view_adult=true&view_full_work=false', { signal: AbortSignal.timeout(20000), redirect: 'follow',
+      headers: { 'User-Agent': 'Marginalia/1.0 (personal reading tracker)', Accept: 'text/html' } });
+  } catch { throw new HttpError(502, 'Could not reach AO3'); }
+  if (r.status === 404) throw new HttpError(404, 'AO3 has no work with that number');
+  if (r.status === 429) { const e = new HttpError(429, 'AO3 asked us to slow down. Try again in a minute.'); e.retryAfter = r.headers.get('retry-after'); throw e; }
+  if (r.status === 403 || r.status === 503) throw new HttpError(502, 'AO3 refused the request (it may be blocking automated lookups from this server)');
+  if (!r.ok) throw new HttpError(502, 'AO3 answered with status ' + r.status);
+  const html = (await r.text()).slice(0, 3_000_000);
+  try { return parseWork(html); }
+  catch (e) { throw new HttpError(e.code === 'restricted' ? 403 : 502, e.message); }
+}
+
 /* ---------- routes ---------- */
 async function api(req, res, url) {
   const route = req.method + ' ' + url.pathname;
@@ -472,6 +505,16 @@ async function api(req, res, url) {
     const im = await findCover(title, creator, asin);
     if (!im) throw new HttpError(404, 'No cover found');
     return send(res, 200, im.buf, cors2(im.type));
+  }
+
+  /* ----- AO3 lookup ----- */
+  if (route === 'GET /api/ao3') {
+    if (!(await featureOn(pool, user.id, 'ao3_fetch'))) throw new HttpError(403, 'AO3 lookup is not turned on for this account');
+    const id = String(url.searchParams.get('id') || '').trim();
+    if (!/^\d{1,12}$/.test(id)) throw new HttpError(400, 'Not a valid AO3 work number');
+    ao3Quota(user.id);
+    const w = await fetchWork(id);
+    return send(res, 200, Object.assign({ id, url: 'https://archiveofourown.org/works/' + id }, w), Object.assign({}, cors, { 'Cache-Control': 'private, max-age=3600' }));
   }
 
   /* ----- export everything (the parts the page does not already hold) ----- */
