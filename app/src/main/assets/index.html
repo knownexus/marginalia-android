@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-l0eyIcCtXMJUrGzavYiwgKuvVPcTcuNUxIvzDxvkF9I='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-zceZ2ppvw4A6fXcYxhDSSXIztfScjb9ecFFSIl1pW7g='; style-src 'unsafe-inline'; img-src data:; connect-src 'self' https://web-production-ac96f798.up.railway.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#1a1320">
@@ -1795,11 +1795,29 @@ let tq='';
 const labelCounts=f=>{const m=new Map();db.entries.forEach(e=>(e[f]||[]).forEach(g=>m.set(g,(m.get(g)||0)+1)));return m;};
 function moveLabel(v,from,to){let n=0;const t=now();db.entries.forEach(e=>{if(!(e[from]||[]).includes(v))return;e[from]=e[from].filter(x=>x!==v);e[to]=e[to]||[];if(!e[to].includes(v))e[to].push(v);e.updated=t;n++;});return n;}
 function renameTag(from,to){let n=0;const t=now();db.entries.forEach(e=>{if(!(e.tags||[]).includes(from))return;e.tags=[...new Set(e.tags.map(x=>x===from?to:x).filter(Boolean))];e.updated=t;n++;});return n;}
+let tsel=new Set();
+/* Merge tags: every entry that has any of the source tags loses them and gets the target instead, as a tag, or as a genre when
+   the target is an existing genre. Returns how many entries changed. */
+function mergeLabels(from,to,field){
+  const src=new Set(from.filter(x=>x!==to));let n=0;const t=now();
+  db.entries.forEach(e=>{
+    if(!(e.tags||[]).some(x=>src.has(x)))return;   // only entries that carry one of the merged tags change
+    const tags=(e.tags||[]).filter(x=>!src.has(x)&&x!==to);let genres=e.genres;
+    if(field==='genres'){if(!genres.includes(to))genres=[...genres,to];}else tags.push(to);
+    e.tags=tags;e.genres=genres;e.updated=t;n++;
+  });
+  return n;
+}
+function tagSuggestions2(){   // tags that look like the same one (scifi, sci-fi, sci fi)
+  const counts=labelCounts('tags'),groups=new Map();
+  for(const g of counts.keys())pushTo(groups,genreKey(g),g);
+  return [...groups.values()].filter(a=>a.length>1).map(a=>a.sort((x,y)=>counts.get(y)-counts.get(x)||x.localeCompare(y)));
+}
 function tlistHTML(){
   const counts=labelCounts('tags'),q=tq.trim().toLowerCase();
   const rows=[...counts.entries()].filter(([t])=>!q||t.includes(q)).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
   const shown=rows.slice(0,300);
-  return rows.length?`<ul class="runs">${shown.map(([t,c])=>`<li><b>${esc(t)}</b> <span class="muted">${c}</span> <button type="button" class="btn small" data-tagx="show" data-v="${esc(t)}">Show</button> <button type="button" class="btn small" data-tagx="rename" data-v="${esc(t)}">Rename</button> <button type="button" class="btn small" data-tagx="togenre" data-v="${esc(t)}">Make it a genre</button> <button type="button" class="btn small danger" data-tagx="del" data-v="${esc(t)}">Remove</button></li>`).join('')}</ul>${rows.length>shown.length?`<p class="muted small">Showing the 300 most used of ${rows.length}. Search to find others.</p>`:''}`:'<p class="muted">No tags yet.</p>';
+  return rows.length?`<ul class="runs">${shown.map(([t,c])=>`<li><label style="display:inline-flex;gap:.5rem;align-items:center;font-weight:400"><input type="checkbox" style="width:auto;min-height:0" data-tagsel="${esc(t)}"${tsel.has(t)?' checked':''} aria-label="Select ${esc(t)}"> <b>${esc(t)}</b></label> <span class="muted">${c}</span> <button type="button" class="btn small" data-tagx="show" data-v="${esc(t)}">Show</button> <button type="button" class="btn small" data-tagx="rename" data-v="${esc(t)}">Rename</button> <button type="button" class="btn small" data-tagx="togenre" data-v="${esc(t)}">Make it a genre</button> <button type="button" class="btn small danger" data-tagx="del" data-v="${esc(t)}">Remove</button></li>`).join('')}</ul>${rows.length>shown.length?`<p class="muted small">Showing the 300 most used of ${rows.length}. Search to find others.</p>`:''}`:'<p class="muted">No tags yet.</p>';
 }
 function tagsPanel(){
   if(!tagsOn())return '';
@@ -1807,13 +1825,30 @@ function tagsPanel(){
   return `<div class="panel"><h2>Tags (${counts.size})</h2>
     <p class="muted" style="margin-top:0">Genres are broad categories (fantasy, sci-fi). Tags are free labels: tropes, pairings, moods. Each entry has both. Move a label from one to the other here, or use <i>Make it a tag</i> in the genre manager.</p>
     ${ficN?`<p><button type="button" class="btn" data-tagx="fic">Move genres to tags on ${plural(ficN,'fanfiction entry','fanfiction entries')}</button></p>`:''}
-    <label>Find a tag<input type="search" id="tq" value="${esc(tq)}" placeholder="Filter tags…"></label>
+    ${(()=>{const sug=tagSuggestions2();return sug.length?`<h3 style="margin:1rem 0 .4rem">Look like the same tag</h3><ul class="runs">${sug.slice(0,12).map(a=>`<li>${a.map(g=>`<b>${esc(g)}</b> <span class="muted">(${counts.get(g)})</span>`).join(' · ')} <button type="button" class="btn small" data-tagx="merge-sug" data-v="${esc(JSON.stringify(a))}">Merge into “${esc(a[0])}”</button></li>`).join('')}</ul>`:'';})()}
+    <label style="margin-top:1rem">Find a tag<input type="search" id="tq" value="${esc(tq)}" placeholder="Filter tags…"></label>
+    <p class="chips" style="margin:.7rem 0"><button type="button" class="btn small" id="tmerge" data-tagx="merge-sel">Merge selected (${tsel.size})…</button><button type="button" class="btn small" data-tagx="sel-none">Clear selection</button></p>
     <div id="tlist">${tlistHTML()}</div></div>`;
 }
 document.addEventListener('input',ev=>{if(ev.target.id==='tq'){tq=ev.target.value;const l=$('#tlist');if(l)l.innerHTML=tlistHTML();}});
+document.addEventListener('change',ev=>{const el=ev.target.closest&&ev.target.closest('[data-tagsel]');if(!el)return;const v=el.dataset.tagsel;if(el.checked)tsel.add(v);else tsel.delete(v);const bt=$('#tmerge');if(bt)bt.textContent='Merge selected ('+tsel.size+')…';});
+function doMerge(names){   // asks for the target name, then merges
+  const counts=labelCounts('tags'),gcounts=labelCounts('genres'),sorted=[...names].sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0)||a.localeCompare(b));
+  const nn=prompt('Merge '+sorted.length+' tags into…',sorted[0]),to=(nn||'').trim().toLowerCase();if(!to)return;
+  let field='tags';
+  if(!counts.has(to)&&!sorted.includes(to)&&gcounts.has(to)){
+    if(confirm('“'+to+'” is already a genre. Merge these tags into that genre?\n\nOK: they become the genre “'+to+'”.\nCancel: they become a new tag with that name.'))field='genres';
+  }
+  const snap=undoSnap(),n=mergeLabels(sorted,to,field);
+  if(!n){toast('Nothing changed');return;}
+  sorted.forEach(x=>tsel.delete(x));changed();offerUndo('Merged into “'+to+'” on '+plural(n,'entry','entries'),snap);
+}
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-tagx]');if(!b)return;
   const a=b.dataset.tagx,v=b.dataset.v;
+  if(a==='merge-sel'){if(tsel.size<2){toast('Tick at least two tags first');return;}doMerge([...tsel]);return;}
+  if(a==='merge-sug'){const list=JSON.parse(v),snap=undoSnap(),n=mergeLabels(list,list[0],'tags');list.forEach(x=>tsel.delete(x));changed();offerUndo('Merged into “'+list[0]+'” on '+plural(n,'entry','entries'),snap);return;}
+  if(a==='sel-none'){tsel.clear();render();return;}
   if(a==='show'){F=defaults();F.include.tag=[v];lastView=null;location.hash='#/library';return;}
   const snap=undoSnap();
   if(a==='rename'){const nn=prompt('Rename the tag “'+v+'” to…',v),t=(nn||'').trim().toLowerCase();if(!t||t===v)return;if(labelCounts('tags').has(t)&&!confirm('“'+t+'” already exists. Merge “'+v+'” into it?'))return;const n=renameTag(v,t);changed();offerUndo('Renamed on '+plural(n,'book'),snap);}
@@ -1824,7 +1859,7 @@ document.addEventListener('click',ev=>{
 });
 /* ---------- tidy up: genres and duplicates (flags: genre_manager, duplicates) ---------- */
 let gq='',gsel=new Set();
-const tidyOn=()=>feat('genre_manager')||feat('duplicates');
+const tidyOn=()=>feat('genre_manager')||feat('duplicates')||feat('tags');
 const pushTo=(m,k,v)=>{(m.get(k)||m.set(k,[]).get(k)).push(v);};
 function genreCounts(){const m=new Map();db.entries.forEach(e=>e.genres.forEach(g=>m.set(g,(m.get(g)||0)+1)));return m;}
 function applyGenreMap(map){   // old name -> new name, or null to remove it
@@ -1915,7 +1950,7 @@ function mergeEntries(keepId,removeIds){
   return others.length;
 }
 function viewTidy(){
-  const parts=[];if(feat('genre_manager'))parts.push(genresPanel());if(feat('duplicates'))parts.push(duplicatesPanel());
+  const parts=[];if(feat('genre_manager')||feat('tags'))parts.push(genresPanel());if(feat('tags'))parts.push(tagsPanel());if(feat('duplicates'))parts.push(duplicatesPanel());
   return `<h1>Tidy up</h1>${parts.join('')||'<div class="panel empty">Nothing to tidy here.</div>'}`;
 }
 
